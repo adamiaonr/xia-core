@@ -7,6 +7,8 @@ all:
 	make -C demo
 	make -C irc
 	make -C multicast
+	make -C mqtt
+	
 
 static: all
 
@@ -18,3 +20,4 @@ clean:
 	make -C example clean
 	make -C demo clean
 	make -C irc clean
+	make -C mqtt clean
