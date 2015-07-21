@@ -696,9 +696,9 @@ Graph::out_edges_for_index(std::size_t i, std::size_t source_index, std::size_t 
 	{
 		size_t idx = index_in_dag_string(out_edges_[i][j], source_index, sink_index);
 		char *idx_str;
-		int size = snprintf(NULL, 0, " %d", idx);
+		int size = snprintf(NULL, 0, " %zu", idx);
 		idx_str = (char*)malloc(sizeof(char) * size +1); // +1 for null char (sprintf automatically appends it)
-		sprintf(idx_str, " %d", idx);
+		sprintf(idx_str, " %zu", idx);
 		out_edge_string += idx_str;
 		free(idx_str);
 	}
@@ -1101,7 +1101,6 @@ Graph::get_node(int i) const
 	return nodes_[index_from_dag_string_index(i, src_index, sink_index)];
 }
 
-
 /**
 * @brief Get the out edges for a node
 *
@@ -1427,8 +1426,16 @@ void
 Graph::replace_node_at(int i, const Node& new_node)
 {
 	// FIXME: validate that i is a valid index into the dag
-	nodes_[i] = new_node;
+	std::size_t src_index = -1, sink_index = -1;
+	for (std::size_t j = 0; j < nodes_.size(); j++)
+	{
+		if (is_source(j)) src_index = j;
+		if (is_sink(j)) sink_index = j;
+	}
+
+	nodes_[index_from_dag_string_index(i, src_index, sink_index)] = new_node;
 }
+
 
 /**
 * @brief Return the final intent of the DAG.

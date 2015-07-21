@@ -39,9 +39,8 @@ public:
 	int transportType() { return m_transportType; };
 	void setTransportType(int tt) {m_transportType = tt; };
 
-	int data(char *buf, unsigned bufLen);
-	void setData(const char *buf, unsigned bufLen);
-	int dataLen() { return m_bufLen; };
+	int protocol() { return m_protocol; };
+	void setProtocol(int p) {m_protocol = p; };
 
 	int getConnState() { return m_connected; };
 	void setConnState(int conn) { m_connected = conn; };
@@ -60,23 +59,26 @@ public:
 	void setRecvTimeout(struct timeval *timeout) { m_timeout.tv_sec = timeout->tv_sec; m_timeout.tv_usec = timeout->tv_usec; };
 	void getRecvTimeout(struct timeval *timeout) {timeout->tv_sec = m_timeout.tv_sec; timeout->tv_usec = m_timeout.tv_usec; };
 
-	void setError(int error) { m_error = error; };
-	int getError() { int e = m_error; m_error = 0;return e; };
-//	int getError() { int e = m_error; m_error = 0; return e; };
-
 	const sockaddr_x *peer() { return m_peer; };
 	int setPeer(const sockaddr_x *peer);
+
+	int isSIDAssigned() { return m_sid_assigned; };
+	void setSIDAssigned() { m_sid_assigned = 1; };
+
+	int isTempSID() { return (m_temp_sid == NULL) ? 0 : 1;};
+	void setTempSID(const char *sid);
+	const char *getTempSID() {return m_temp_sid;};
 
 	void init();
 private:
 	int m_transportType;
+	int m_protocol;
 	int m_connected;
 	int m_blocking;
 	int m_debug;
-	int m_error;
-	char *m_buf;
 	sockaddr_x *m_peer;
-	unsigned m_bufLen;
+	char *m_temp_sid;
+	int m_sid_assigned;
 	unsigned m_sequence;
 	struct timeval m_timeout;
 	pthread_mutex_t m_sequence_lock;
@@ -98,8 +100,6 @@ SocketState::SocketState()
 
 SocketState::~SocketState()
 {
-	if (m_buf)
-		delete(m_buf);
 	if (m_peer)
 		free(m_peer);
 	m_packets.clear();
@@ -109,58 +109,32 @@ SocketState::~SocketState()
 void SocketState::init()
 {
 	m_transportType = -1;
+	m_protocol = 0;
 	m_connected = 0;
-	m_blocking = 1;
-	m_buf = NULL;
+	m_blocking = TRUE;
 	m_peer = NULL;
-	m_bufLen = 0;
+	m_temp_sid = NULL;
+	m_sid_assigned = 0;
 	m_sequence = 1;
 	m_debug = 0;
-	m_error = 0;
 	m_timeout.tv_sec = 0;
 	m_timeout.tv_usec = 0;
 	pthread_mutex_init(&m_sequence_lock, NULL);
 }
 
-int SocketState::data(char *buf, unsigned bufLen)
+void SocketState::setTempSID(const char *sid)
 {
-	if (m_bufLen == 0) {
-		// we don't have anything stashed away
-		return 0;
-
-	} else if (m_bufLen > bufLen) {
-		// give the caller as much as we can, and hang on to the rest
-		// for later
-		memcpy(buf, m_buf, bufLen);
-		m_bufLen -= bufLen;
-		memmove(m_buf, m_buf + bufLen, m_bufLen);
-
-	} else {
-		// get rid of the data and reset our state
-		bufLen = m_bufLen;
-		memcpy(buf, m_buf, m_bufLen);
-		delete(m_buf);
-		m_buf = (char *)0;
-		m_bufLen = 0;
+	if(!sid) {
+		return;
 	}
-	return bufLen;
-}
-
-void SocketState::setData(const char *buf, unsigned bufLen)
-{
-	if (!buf || bufLen == 0)
+	if(m_temp_sid) {
+		delete(m_temp_sid);
+	}
+	m_temp_sid = new char [strlen(sid) + 1];
+	if(!m_temp_sid) {
 		return;
-
-	if (m_buf)
-		delete(m_buf);
-	m_bufLen = 0;
-
-	m_buf = new char [bufLen];
-	if (!m_buf)
-		return;
-
-	memcpy(m_buf, buf, bufLen);
-	m_bufLen = bufLen;
+	}
+	strcpy(m_temp_sid, sid);
 }
 
 int SocketState::getPacket(unsigned seq, char *buf, unsigned buflen)
@@ -172,6 +146,7 @@ int SocketState::getPacket(unsigned seq, char *buf, unsigned buflen)
 	if (it != m_packets.end()) {
 		string s = it->second;
 
+printf("getting a packet\n");
 		rc = MIN(buflen, s.size());
 		memcpy(buf, s.c_str(), rc);
 
@@ -258,6 +233,7 @@ void SocketMap::remove(int sock)
 	SocketMap *state = getMap();
 
 	pthread_rwlock_wrlock(&rwlock);
+	delete state->sockets[sock];
 	state->sockets.erase(sock);
 	pthread_rwlock_unlock(&rwlock);
 }
@@ -309,6 +285,16 @@ int getSocketType(int sock)
 		return -1;
 }
 
+int getProtocol(int sock)
+{
+	SocketState *sstate = SocketMap::getMap()->get(sock);
+	if (sstate) {
+		return sstate->protocol();
+	}
+	else
+		return 0;
+}
+
 int getConnState(int sock)
 {
 	SocketState *sstate = SocketMap::getMap()->get(sock);
@@ -325,13 +311,29 @@ void setConnState(int sock, int conn)
 		sstate->setConnState(conn);
 }
 
+int isSIDAssigned(int sock)
+{
+	SocketState *sstate = SocketMap::getMap()->get(sock);
+	if (sstate)
+		return sstate->isSIDAssigned();
+	else
+		return 0;
+}
+
+void setSIDAssigned(int sock)
+{
+	SocketState *sstate = SocketMap::getMap()->get(sock);
+	if (sstate)
+		sstate->setSIDAssigned();
+}
+
 int isBlocking(int sock)
 {
 	SocketState *sstate = SocketMap::getMap()->get(sock);
 	if (sstate)
 		return sstate->isBlocking();
 	else
-		return 0;
+		return TRUE;
 }
 
 void setBlocking(int sock, int blocking)
@@ -339,6 +341,8 @@ void setBlocking(int sock, int blocking)
 	SocketState *sstate = SocketMap::getMap()->get(sock);
 	if (sstate)
 		sstate->setBlocking(blocking);
+
+	Xsetsockopt(sock, XOPT_BLOCK, (void*)&blocking, sizeof(blocking));
 }
 
 int getDebug(int sock)
@@ -373,22 +377,6 @@ void getRecvTimeout(int sock, struct timeval *timeout)
 		timeout->tv_sec = timeout->tv_usec = 0;
 }
 
-void setError(int sock, int error)
-{
-	SocketState *sstate = SocketMap::getMap()->get(sock);
-	if (sstate)
-		sstate->setError(error);
-}
-
-int getError(int sock)
-{
-	SocketState *sstate = SocketMap::getMap()->get(sock);
-	if (sstate)
-		return sstate->getError();
-	else
-		return 0;
-}
-
 void setSocketType(int sock, int tt)
 {
 	SocketState *sstate = SocketMap::getMap()->get(sock);
@@ -396,20 +384,38 @@ void setSocketType(int sock, int tt)
 		sstate->setTransportType(tt);
 }
 
-int getSocketData(int sock, char *buf, unsigned bufLen)
+void setProtocol(int sock, int p)
 {
 	SocketState *sstate = SocketMap::getMap()->get(sock);
 	if (sstate)
-		return sstate->data(buf, bufLen);
-	else
-		return 0;
+		sstate->setProtocol(p);
 }
 
-void setSocketData(int sock, const char *buf, unsigned bufLen)
+int isTempSID(int sock)
 {
 	SocketState *sstate = SocketMap::getMap()->get(sock);
-	if (sstate)
-		sstate->setData(buf, bufLen);
+	if(sstate) {
+		return sstate->isTempSID();
+	} else {
+		return 0;
+	}
+}
+
+void setTempSID(int sock, const char *sid)
+{
+	SocketState *sstate = SocketMap::getMap()->get(sock);
+	if(sstate) {
+		sstate->setTempSID(sid);
+	}
+}
+
+const char *getTempSID(int sock)
+{
+	SocketState *sstate = SocketMap::getMap()->get(sock);
+	if(sstate) {
+		return sstate->getTempSID();
+	}
+	return NULL;
 }
 
 unsigned seqNo(int sock)
@@ -423,6 +429,7 @@ unsigned seqNo(int sock)
 
 void cachePacket(int sock, unsigned seq, char *buf, unsigned buflen)
 {
+printf("adding cached packet\n");
 	SocketState *sstate = SocketMap::getMap()->get(sock);
 	if (sstate) {
 		sstate->insertPacket(seq, buf, buflen);
@@ -463,56 +470,3 @@ const sockaddr_x *dgramPeer(int sock)
 		peer = sstate->peer();
 	return peer;
 }
-
-#if 0
-int main()
-{
-	char buf[1024];
-	int len;
-
-	// should be invalid
-	printf("socket %d tt %d\n", 0, getSocketType(0));
-
-	// should be valid, then invalid
-	allocSocketState(5, 1);
-	printf("socket %d tt %d\n", 5, getSocketType(5));
-	freeSocketState(5);
-
-	allocSocketState(2, 3);
-	printf("socket %d tt %d conn %d\n", 2, getSocketType(2), isConnected(2));
-	setConnected(2, 1);
-	printf("socket %d tt %d conn %d\n", 2, getSocketType(2), isConnected(2));
-
-
-	allocSocketState(55, 2);
-	printf("socket %d tt %d\n", 55, getSocketType(55));
-	setSocketType(55, 3);
-	printf("socket %d tt %d\n", 55, getSocketType(55));
-
-	len = getSocketData(55, buf, 1024);
-	printf("socket %d buflen %d\n", 55, len);
-
-	const char *p = "0123456789";
-	setSocketData(55, p, 10);
-	len = getSocketData(55, buf, 5);
-	buf[5] = 0;
-	printf("sock %d len %d buf %s\n", 55, len, buf);
-	len = getSocketData(55, buf, 1024);
-	buf[len] = 0;
-	printf("sock %d len %d buf %s\n", 55, len, buf);
-
-	setSocketData(2, p, 10);
-	len = getSocketData(2, buf, 1024);
-	buf[len] = 0;
-	printf("sock %d len %d buf %s\n", 2, len, buf);
-	len = getSocketData(2, buf, 1024);
-	buf[len] = 0;
-	printf("sock %d len %d buf %s\n", 2, len, buf);
-
-	len = getSocketData(100, buf, 1024);
-	printf("sock %d len %d\n", 100, len);
-}
-#endif
-
-//}
-

@@ -9,8 +9,8 @@
 #include "xiaxidroutetable.hh"
 #include <click/handlercall.hh>
 #include <click/xiapath.hh>
+#include <click/xiasecurity.hh>
 #include <clicknet/xia.h>
-#include "xiacontentmodule.hh"
 #include "xiaxidroutetable.hh"
 #include <clicknet/udp.h>
 #include <click/string.hh>
@@ -34,8 +34,10 @@ using namespace std;
 #endif
 
 // FIXME: put these in a std location that can be found by click and the API
-#define XOPT_HLIM 0x07001
+#define XOPT_HLIM       0x07001
 #define XOPT_NEXT_PROTO 0x07002
+#define XOPT_BLOCK      0x07003
+#define XOPT_ERROR_PEEK 0x07004
 
 #ifndef DEBUG
 #define DEBUG 0
@@ -64,6 +66,7 @@ using namespace std;
 #define DEFAULT_RECV_WIN_SIZE 128
 
 #define MAX_CONNECT_TRIES	 30
+#define MAX_MIGRATE_TRIES	 30
 #define MAX_RETRANSMIT_TRIES 100
 
 #define REQUEST_FAILED		0x00000001
@@ -267,9 +270,7 @@ output[2]: Network Tx data port
 output[0]: Socket (API) Tx data port
 
 Might need other things to handle chunking
-*/
-
-class XIAContentModule;   
+*/  
 
 
 typedef struct {
@@ -309,6 +310,7 @@ class XTRANSPORT : public Element {
     Timer _timer;
     
     unsigned _ackdelay_ms;
+    unsigned _migrateackdelay_ms;
     unsigned _teardown_wait_ms;
     
     uint32_t _cid_type, _sid_type;
@@ -331,7 +333,7 @@ class XTRANSPORT : public Element {
 	 * Socket states
 	 * ========================= */
     struct sock {
-    	sock(): port(0), isConnected(false), initialized(false), full_src_dag(false), timer_on(false), synack_waiting(false), dataack_waiting(false), teardown_waiting(false), send_buffer_size(DEFAULT_SEND_WIN_SIZE), recv_buffer_size(DEFAULT_RECV_WIN_SIZE), send_base(0), next_send_seqnum(0), recv_base(0), next_recv_seqnum(0), dgram_buffer_start(0), dgram_buffer_end(-1), recv_buffer_count(0), recv_pending(false), polling(0), did_poll(false) {};
+		sock(): port(0), so_error(0), isConnected(false), isBlocking(true), initialized(false), full_src_dag(false), timer_on(false), synack_waiting(false), dataack_waiting(false), teardown_waiting(false), migrateack_waiting(false), send_buffer_size(DEFAULT_SEND_WIN_SIZE), recv_buffer_size(DEFAULT_RECV_WIN_SIZE), send_base(0), next_send_seqnum(0), recv_base(0), next_recv_seqnum(0), dgram_buffer_start(0), dgram_buffer_end(-1), recv_buffer_count(0), recv_pending(false), polling(0), did_poll(false) {};
 
 	/* =========================
 	 * Common Socket states
@@ -347,8 +349,6 @@ class XTRANSPORT : public Element {
 
 		bool full_src_dag; // bind to full dag or just to SID  
 		int sock_type; // 0: Reliable transport (SID), 1: Unreliable transport (SID), 2: Content Chunk transport (CID)
-		String sdag;
-		String ddag;
 
 	/* =========================
 	 * XSP/XChunkP Socket states
@@ -356,15 +356,23 @@ class XTRANSPORT : public Element {
 
 		bool isConnected;
 		bool initialized;
-		bool isAcceptSocket;
+		bool isListenSocket;
+		bool isBlocking;
 		bool synack_waiting;
 		bool dataack_waiting;
 		bool teardown_waiting;
+		bool migrateack_waiting;
+		unsigned backlog;
+		int so_error;		// used by non-blocking connect, accessed via getsockopt(SO_ERROR)
+		int so_debug;		// set/read via SO_DEBUG. could be used for tracing
+		int interface_id;	// port of the interface the packets arrive on
+		String last_migrate_ts;
 
 		bool did_poll;
 		unsigned polling;
 
 		int num_connect_tries; // number of xconnect tries (Xconnect will fail after MAX_CONNECT_TRIES trials)
+		int num_migrate_tries; // number of migrate tries (Connection closes after MAX_MIGRATE_TRIES trials)
 		int num_retransmit_tries; // number of times to try resending data packets
 
     	queue<sock*> pending_connection_buf;
@@ -390,6 +398,7 @@ class XTRANSPORT : public Element {
 
 		//Vector<WritablePacket*> pkt_buf;
 		WritablePacket *syn_pkt;
+		WritablePacket *migrate_pkt;
 		HashTable<XID, WritablePacket*> XIDtoCIDreqPkt;
 		HashTable<XID, Timestamp> XIDtoExpiryTime;
 		HashTable<XID, bool> XIDtoTimerOn;
@@ -576,6 +585,8 @@ class XTRANSPORT : public Element {
 	void resize_send_buffer(sock *sk, uint32_t new_size);
 	void resize_recv_buffer(sock *sk, uint32_t new_size);
 
+	bool usingRendezvousDAG(XIAPath bound_dag, XIAPath pkt_dag);
+
     void ProcessAPIPacket(WritablePacket *p_in);
     void ProcessNetworkPacket(WritablePacket *p_in);
     void ProcessCachePacket(WritablePacket *p_in);
@@ -594,6 +605,7 @@ class XTRANSPORT : public Element {
     void Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void Xclose(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void Xconnect(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
+    void Xlisten(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
 	void XreadyToAccept(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void Xaccept(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void Xchangead(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
@@ -615,6 +627,7 @@ class XTRANSPORT : public Element {
     void XbindPush(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void XputChunk(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
     void Xpoll(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
+    void Xupdaterv(unsigned short _sport, xia::XSocketMsg *xia_socket_msg);
 };
 
 

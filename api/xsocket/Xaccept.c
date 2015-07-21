@@ -35,17 +35,6 @@
 ** created socket is not in the listening state. The original socket
 ** sockfd is unaffected by this call.
 **
-** Xaccept does not currently have a non-blocking mode, and will block
-** until a connection is made. However, the standard socket API calls select
-** and poll may be used with the Xsocket. Either function will deliver a
-** readable event when a new connection is attempted and you may then call
-** Xaccept() to get a socket for that connection.
-**
-** @note Unlike standard sockets, there is currently no Xlisten function.
-** Callers must create the listening socket by calling Xsocket with the
-** XSOCK_STREAM transport_type and bind it to a source DAG with Xbind(). XAccept
-** may then be called to wait for connections.
-**
 ** @param sockfd	an Xsocket() previously created with the XSOCK_STREAM type,
 ** and bound to a local DAG with Xbind()
 ** @param addr if non-NULL, points to a block of memory that will contain the
@@ -66,7 +55,6 @@ int Xaccept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	socklen_t len;
 	int new_sockfd;
 
-printf("XACCEPT %d\n", sockfd);
 	// if an addr buf is passed, we must also have a valid length pointer
 	if (addr != NULL && addrlen == NULL) {
 		errno = EFAULT;
@@ -89,9 +77,12 @@ printf("XACCEPT %d\n", sockfd);
 		return -1;
 	}
 
-	// we'll block waiting for click to tell us there's a pending connection
+	// if blocking, wait for click to tell us there's a pending connection
+	// else return EWOULDBLOCK
 	if (click_status(sockfd, seq) < 0) {
-		LOGF("Error getting status from Click: %s", strerror(errno));
+		if (isBlocking(sockfd) || !WOULDBLOCK()) {
+			LOGF("Error getting status from Click: %s", strerror(errno));
+		}
 		return -1;
 	}
 
@@ -101,16 +92,14 @@ printf("XACCEPT %d\n", sockfd);
 		return -1;
 	}
 
-printf("accept fd=%d SOCK_STREAM=%d\n", new_sockfd, SOCK_STREAM);
 	allocSocketState(new_sockfd, SOCK_STREAM);
-
 	
 	// bind to an unused random port number
 	my_addr.sin_family = PF_INET;
 	my_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 	my_addr.sin_port = 0;
 
-	if (bind(new_sockfd, (const struct sockaddr *)&my_addr, sizeof(my_addr)) < 0) {
+	if ((_f_bind)(new_sockfd, (const struct sockaddr *)&my_addr, sizeof(my_addr)) < 0) {
 		(_f_close)(new_sockfd);
 
 		LOGF("Error binding new socket to local port: %s", strerror(errno));
@@ -128,37 +117,43 @@ printf("accept fd=%d SOCK_STREAM=%d\n", new_sockfd, SOCK_STREAM);
 		return -1;
 	}
 
-	xia::XSocketMsg xia_socket_msg;
-	xia_socket_msg.set_type(xia::XACCEPT);
+	xia::XSocketMsg xsm;
+	xsm.set_type(xia::XACCEPT);
 	seq = seqNo(new_sockfd);
-	xia_socket_msg.set_sequence(seq);
+	xsm.set_sequence(seq);
 	
-	xia::X_Accept_Msg *x_accept_msg = xia_socket_msg.mutable_x_accept();
+	xia::X_Accept_Msg *x_accept_msg = xsm.mutable_x_accept();
 	x_accept_msg->set_new_port(((struct sockaddr_in)my_addr).sin_port);
 
-	if (click_send(sockfd, &xia_socket_msg) < 0) {
-//		(_f_close)(new_sockfd);
-		close(new_sockfd);
+	if (click_send(sockfd, &xsm) < 0) {
+		(_f_close)(new_sockfd);
 		LOGF("Error talking to Click: %s", strerror(errno));
 		return -1;
 	}
 
-// FIXME: change to use click reply so we get the peer dag!
-	if (click_status(sockfd, seq) < 0) {
-		(_f_close)(new_sockfd);
-		LOGF("Error getting status from Click: %s", strerror(errno));
+	xsm.Clear();
+	if (click_reply(sockfd, seq, &xsm) < 0) {
+		LOGF("Error retrieving status from Click: %s", strerror(errno));
 		return -1;
 	}
 
-	// FIXME: add code to get the peername, and fill in the sockaddr
-	if (addr != NULL) {
+	if (addr != NULL && *addrlen >= sizeof(sockaddr_x)) {
+
+		xia::X_Accept_Msg *msg = xsm.mutable_x_accept();
+		Graph g(msg->remote_dag().c_str());
+		g.fill_sockaddr((sockaddr_x*)addr);
+
 		if (*addrlen < sizeof(sockaddr_x)) {
 			LOG("addr is not large enough to hold a sockaddr_x");
 		}
-	}
-	if (addrlen)
-		*addrlen = 0;
 
+	} else if (addr) {
+		memset((void*)addr, 0, sizeof(sockaddr_x));
+	}
+
+	if (addrlen) {
+		*addrlen = sizeof(sockaddr_x);
+	}
 
 	setConnState(new_sockfd, CONNECTED);
 
@@ -175,17 +170,6 @@ printf("accept fd=%d SOCK_STREAM=%d\n", new_sockfd, SOCK_STREAM);
 ** created socket is not in the listening state. The original socket
 ** sockfd is unaffected by this call.
 **
-** Xaccept4 does not currently have a non-blocking mode, and will block
-** until a connection is made. However, the standard socket API calls select
-** and poll may be used with the Xsocket. Either function will deliver a
-** readable event when a new connection is attempted and you may then call
-** Xaccept() to get a socket for that connection.
-**
-** @note Unlike standard sockets, there is currently no Xlisten function.
-** Callers must create the listening socket by calling Xsocket with the
-** XSOCK_STREAM transport_type and bind it to a source DAG with Xbind(). XAccept
-** may then be called to wait for connections.
-**
 ** @param sockfd	an Xsocket() previously created with the XSOCK_STREAM type,
 ** and bound to a local DAG with Xbind()
 ** @param addr if non-NULL, points to a block of memory that will contain the
@@ -201,11 +185,24 @@ printf("accept fd=%d SOCK_STREAM=%d\n", new_sockfd, SOCK_STREAM);
 */
 int Xaccept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags)
 {
-	if (flags != 0) {
-		LOG("error: flags are not currently allowed in the XIA version of accept4");
-		errno = EINVAL;
-		return - 1;
+	int block = TRUE;
+
+	if (flags ) {
+		if (flags & SOCK_NONBLOCK) {
+			block = FALSE;
+		} else {
+			flags &= ~SOCK_NONBLOCK;
+			LOGF("error: unsupported flags: %s", xferFlags(flags));
+			errno = EINVAL;
+			return - 1;
+		}
 	}
 
-	return Xaccept(sockfd, addr, addrlen);
+	int rc = Xaccept(sockfd, addr, addrlen);
+
+	if (block == FALSE) {
+		setBlocking(sockfd, FALSE);
+	}
+
+	return rc;
 }
