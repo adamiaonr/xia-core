@@ -7,7 +7,8 @@ all:
 	make -C demo
 	make -C irc
 	make -C multicast
-
+	make -C rid
+	
 static: all
 
 clean:
@@ -18,3 +19,4 @@ clean:
 	make -C example clean
 	make -C demo clean
 	make -C irc clean
+	make -C rid clean
