@@ -19,6 +19,10 @@
 #include <click/error.hh>
 #include <click/error-syslog.hh>
 
+// @RID: includes for RIDs: patricia tries, rid utils and rid routing table
+#include <click/xiaridpatricia.hh>
+#include <click/xiaridutil.hh>
+#include "xiaridroutetable.hh"
 
 #if CLICK_USERLEVEL
 #include <list>
@@ -252,6 +256,7 @@ private:
 
 protected:
 	XIAXIDRouteTable *_routeTable;
+	XIARIDRouteTable * _rid_route_table;
 
 	// list of ports wanting xcmp notifications
 	list<int> xcmp_listeners;
@@ -265,6 +270,10 @@ protected:
 	// incoming connection to socket mapping
 	HashTable<XID, sock*> XIDtoSock;
 	HashTable<XIDpair , sock*> XIDpairToSock;
+
+	// incoming connection to socket mapping (special for RIDs)
+	HashTable<unsigned, XIARIDPatricia<sock> *> RIDtoSock;
+
 
 	// find sock structure based on API port #
 	HashTable<unsigned short, sock*> portToSock;
@@ -392,6 +401,17 @@ protected:
 	void delRoute(const XID &sid) {
 		String cmd = sid.unparse();
 		HandlerCall::call_write(_routeTable, "remove", cmd);
+	}
+
+	// @RID : modifications to RID routing table
+	void addRIDRoute(const XID &rid) {
+		String cmd = rid.unparse() + " " + String(DESTINED_FOR_LOCALHOST);
+		HandlerCall::call_write(_rid_route_table, "add", cmd);
+	}
+
+	void delRIDRoute(const XID &rid) {
+		String cmd = rid.unparse();
+		HandlerCall::call_write(_rid_route_table, "remove", cmd);
 	}
 };
 

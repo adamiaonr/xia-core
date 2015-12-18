@@ -1732,6 +1732,19 @@ XTRANSPORT::sock *XTRANSPORT::XID2Sock(XID dest_xid)
 		// register their own rules?
 
 		return XIDtoSock.get(_xcache_sid);
+
+	} else if (ntohl(dest_xid.type()) == XidMap::id("RID")) {
+
+		// @RID: hack to find socket listening for the Longest
+		// Matching RID, in a special PATRICIA trie map, other than XIDtoSock.
+
+		// 1) get the hamming weight (nr. of bits set to '1') of dest_xid
+		int hw = rid_calc_weight(dest_xid);
+
+		// 2) the sock structure should be found in the trie of index 'hw'
+		sk = RIDtoSock[hw]->search(dest_xid)->get_data();
+
+		return sk;
 	}
 
 	return NULL;
@@ -2826,14 +2839,47 @@ void XTRANSPORT::Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 		XID	source_xid = sk->src_path.xid(sk->src_path.destination_node());
 		//TODO: Add a check to see if XID is already being used
 
-		// Map the source XID to source port (for now, for either type of tranports)
-		XIDtoSock.set(source_xid, sk);
-		if(source_xid == _xcache_sid) {
-			sk->xcacheSock = true;
+		// @RID: hack to add RIDs to PATRICIA trie RIDtoSock map
+		if (source_xid.type() == XidMap::id("RID")) {
+
+			// 1) find the Hamming Weight (HW) of the RID
+			int hw = rid_calc_weight(source_xid);
+
+			// 2) is the RIDtoSock map empty for this HW?
+			if (!(RIDtoSock[hw])) {
+
+				// 2.1) if yes, create an new root entry
+				XIARIDPatricia<sock> * root =
+						new XIARIDPatricia<sock>();
+
+				// 2.2) ... and add it to RIDtoSock[hw]
+				RIDtoSock[hw] = root;
+			}
+
+			// 3) insert the RID in the RIDtoSock[hw] : the RID PT insert()
+			// operation already includes a duplicate RID check
+
+			if (!(RIDtoSock[hw]->insert(source_xid, sk))) {
+
+				ERROR("duplicate RID on RIDtoSock map: ",
+						source_xid.unparse().c_str());
+			}
+
+			// 4) add entry to RID routing table
+			addRIDRoute(source_xid);
+
 		} else {
-			sk->xcacheSock = false;
+
+			// Map the source XID to source port (for now, for either type of tranports)
+			XIDtoSock.set(source_xid, sk);
+			if(source_xid == _xcache_sid) {
+				sk->xcacheSock = true;
+			} else {
+				sk->xcacheSock = false;
+			}
+			addRoute(source_xid);
 		}
-		addRoute(source_xid);
+
 		portToSock.set(_sport, sk);
 		if(_sport != sk->port) {
 			ERROR("ERROR _sport %d, sk->port %d", _sport, sk->port);
