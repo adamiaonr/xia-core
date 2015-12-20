@@ -19,9 +19,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
-#include "Xsocket.h"
-#include "dagaddr.hpp"
 #include "rid.h"
+#include "xcache.h"
 
 #define VERSION "v0.1"
 #define TITLE "XIA RID Requester Application"
@@ -33,17 +32,19 @@
 
 int main(int argc, char **argv)
 {
-	// file descriptors for 'SOCK_DGRAM' and 'XSOCK_CHUNK' Xsockets:
-	//	-# 'SOCK_DGRAM': send RID request
-	//	-# 'XSOCK_CHUNK': listens to CID responses directed at a particular
-	//			SID, explicitly set via XbindPush()
-	int xSock = 0, xCIDListenSock = 0;
+	// file descriptors for 'SOCK_DGRAM' Xsocket:
+	//	-# 'SOCK_DGRAM': send RID request and listen for responses
+	int x_sock = 0;
 
-	char * prefix = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
-	char * ridString = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
+	char * name = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
+	char * rid_string;
 
 	// similarly to other XIA example apps, print some initial info on the app
 	say("\n%s (%s): started\n", TITLE, VERSION);
+
+	// initialize the requester's xcache handle
+	XcacheHandle * xcache_handle = NULL; 
+	XcacheHandleInit(xcache_handle);
 
 	// ************************************************************************
 	// 1) gather the application arguments
@@ -71,9 +72,9 @@ int main(int argc, char **argv)
             	// RIDs (e.g. uof/cs/r9x/r9001/)
 				case 'u':
 					// 1.1.1) shift to the argument value, save the url-like
-					// name in prefix
+					// name
 					argc--, av++;
-					strncpy(prefix, av[0], strlen(av[0]));
+					strncpy(name, av[0], strlen(av[0]));
 					break;
 
 				// 1.3) file with list of URL-like names to generate RIDs for
@@ -89,119 +90,89 @@ int main(int argc, char **argv)
 	}
 
 	// ************************************************************************
-	// 2) create XID and DAG(s) for request (and later, response)
+	// 2) create RID out of the provided name
 	// ************************************************************************
+	if (name[0] != '\0') {
 
-	// 2.1) generate XID as a bloom filter (BF) out of the given prefix.
-	// resulting 20 byte array (unsigned char *) is obtained via xid.bf[].
-	struct bloom ridBloom;
-
-	if (prefix[0] != '\0') {
-
-		bloomifyPrefix(&ridBloom, prefix);
+		rid_string = name_to_rid(name);
 
 	} else {
 
-		// 2.1.1) if no prefix has been specified, no point going on...
-		die(-1, "[rid_requester]: prefix string is empty\n");
+		// 2.1) if no name has been specified, no point going on...
+		die(-1, "[rid_requester]: name string is empty\n");
 	}
 
-	// 2.2) transform byte array into string w/ format "RID:[40 char]"
-	// FIXME: this RID will later be used as the SID arg in XbindPush()
-	ridString = toRIDString(ridBloom.bf);
-
-	// 2.3) generate the DAG Graph, which will be composed by 4 nodes, like
-	// this:
-	// direct graph:    (SRC) ---------------> (RID)
-	// fallback graph:    |--> (AD) --> (HID) -->|
-	Node n_src;
-
-	// 2.3.1) create a DAG node of type RID
-	// FIXME: we make use of a special constructor in dagaddr.cpp which
-	// takes in a pair (string type_str, string id_str) as argument and uses the
-	// Node::construct_from_strings() method: if type_str is not a built-in type,
-	// it will look for it the the user defined types set in /etc/xids, so
-	// this should work...
-	Node n_rid(XID_TYPE_RID, ridString);
-
-	// 2.3.2) 'fallback' nodes
-	// TODO: make this an input argument AND/OR retrieve it from some sort of
-	// RID directory service
-	Node n_ad(Node::XID_TYPE_AD, RID_REQUEST_DEFAULT_AD);
-	Node n_hid(Node::XID_TYPE_HID, RID_REQUEST_DEFAULT_HID);
-
-	// 2.4) create the final DAG and a sockaddr_x * struct which can be used
-	// in an XSocket API call
-
-	// 2.4.1) build direct and final graphs as shown in 2.3)
-	Graph directGraph = n_src * n_rid;
-	Graph fallbackGraph = n_src * n_ad * n_hid * n_rid;
-
-	// 2.4.2) use Graph '+' operator to build final version of the Graph
-	Graph finalGraph = directGraph + fallbackGraph;
-
-	// 2.4.3) finally, get the sockaddr_x * struct
-	sockaddr_x * ridSockAddr = (sockaddr_x *) malloc(sizeof(sockaddr_x));
-	finalGraph.fill_sockaddr(ridSockAddr);
-
 	// ************************************************************************
-	// 3) open a 'SOCK_DGRAM' Xsocket, send RID request over it using XSendto
+	// 3) open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER
 	// ************************************************************************
-	if ((xSock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
+	if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
 		die(-1, "[rid_requester]: Xsocket(SOCK_DGRAM) error = %d", errno);
 	}
 
 	// 3.1) bind the requester to a particular SID_REQUESTER, on which it will
-	// listen for
-
-	// 3.1.1) generate a local DAG (and Graph, for printing purposes) in the
-	// style AD:HID:RID_app
+	// listen for RID responses
 
 	// FIXME: will use Xgetaddrinfo(name = NULL, ...) to build
 	// AD:HID:SIDx (= SID_REQUESTER) with local AD:HID
-	struct addrinfo * localAddrInfo;
-	if (Xgetaddrinfo(NULL, (const char *) SID_REQUESTER, NULL, &localAddrInfo) != 0) {
+	struct addrinfo * local_addr_info;
+
+	if (Xgetaddrinfo(
+			NULL, 
+			(const char *) SID_REQUESTER, 
+			NULL, 
+			&local_addr_info) != 0) {
+
 		die(-1, "[rid_requester]: Xgetaddrinfo() error");
 	}
 
-	sockaddr_x * listenAddr = (sockaddr_x *) localAddrInfo->ai_addr;
+	sockaddr_x * listen_addr = (sockaddr_x *) local_addr_info->ai_addr;
 
-	// 3.1.2) Xbind() xSock to the listenDAG
+	// 3.2) Xbind() x_sock to listen_addr
 	if (Xbind(
-			xSock,
-			(struct sockaddr *) listenAddr,
-			sizeof(listenAddr)) < 0) {
+			x_sock,
+			(struct sockaddr *) listen_addr,
+			sizeof(*listen_addr)) < 0) {
 
-		Xclose(xSock);
+		Xclose(x_sock);
 
 		die(	-1,
 				"[rid_requester]: unable to Xbind() to DAG %s error = %d",
-				Graph(listenAddr).dag_string().c_str(),
+				Graph(listen_addr).dag_string().c_str(),
 				errno);
 	}
 
-	// 3.2) bombs away...
-	// TODO: what should be set in the void * buf arg? send gibberish for
+	// 3.3) send the RID request
+	int rid_packet_len = 0;
+	sockaddr_x * rid_dest_addr = 
+			to_rid_addr(
+				rid_string, 
+				RID_REQUEST_DEFAULT_AD,
+				RID_REQUEST_DEFAULT_HID);
+
+	// 3.3.1) TODO: what should be set in the payload? send the full name for 
 	// now...
-	char * ridPacketPayload; strncpy(ridPacketPayload, prefix, RID_MAX_PACKET_SIZE);
-	int rc = 0, ridPacketLength = strlen(ridPacketPayload);
+	char * rid_packet_payload; 
+	strncpy(rid_packet_payload, name, RID_MAX_PACKET_SIZE);
+	rid_packet_len = strlen(rid_packet_payload);
 
 	say("[rid_requester]: sending RID request:"\
 			"\n\t[DST_DAG] = %s"\
 			"\n\t[PAYLOAD] = %s\n",
-			finalGraph.dag_string().c_str(),
-			ridPacketPayload);
+			Graph(rid_dest_addr).dag_string().c_str(),
+			rid_packet_payload);
+	
+	int rc = 0;
 
 	rc = Xsendto(
-			xSock,
-			ridPacketPayload,
-			ridPacketLength,
+			x_sock,
+			rid_packet_payload,
+			rid_packet_len,
 			0,
-			(struct sockaddr *) &ridSockAddr,
-			sizeof(sockaddr_x));
+			(struct sockaddr *) rid_dest_addr,
+			sizeof(*rid_dest_addr));
 
-	// 3.3) check status of RID request
-	if (rc < 0 || rc != ridPacketLength) {
+	// 3.2) check status of RID request
+	if (rc < 0 || rc != rid_packet_len) {
 
 		if (rc < 0) {
 			die(-1, "[rid_requester]: Xsendto() error = %d", errno);
@@ -211,105 +182,102 @@ int main(int argc, char **argv)
 				"\n\t[DST_DAG] = %s"\
 				"\n\t[PAYLOAD] = %s"\
 				"\n\t[RETURN_CODE] = %d\n",
-				finalGraph.dag_string().c_str(),
-				ridPacketPayload,
+				Graph(rid_dest_addr).dag_string().c_str(),
+				rid_packet_payload,
 				rc);
 
 		fflush(stdout);
 	}
 
 	// ************************************************************************
-	// 4) listen to CID responses via XbindPush(), using RID as the explicit
-	//		SIDx on which to listen...
+	// 4) listen to responses to the RID request 
 	// ************************************************************************
 
-	// 4.1) create Xsocket of type 'XSOCK_CHUNK'
-	if ((xCIDListenSock = Xsocket(AF_XIA, XSOCK_CHUNK, 0)) < 0) {
-		die(-1, "[rid_requester]: Xsocket(XSOCK_CHUNK) error = %d", errno);
-	}
+	say("[rid_requester]: will listen to SID packets directed at: %s\n",
+			Graph(listen_addr).dag_string().c_str());
 
-//	// 4.2) call XbindPush() to start listening to CID responses
-//	// on SID = ridString
-//	// NOTE: the SID we're listening on should actually be a 'full-blown' DAG
-//	// like AD:HID:SIDx (= RID)
-//
-//	// FIXME: will use Xgetaddrinfo(name = NULL, ...) to build
-//	// AD:HID:SIDx (= SID_REQUESTER) with local AD:HID
-//	struct addrinfo * localAddrInfo;
-//	if (Xgetaddrinfo(NULL, (const char *) SID_REQUESTER, NULL, &localAddrInfo) != 0) {
-//
-//		Xclose(xSock);
-//		Xclose(xCIDListenSock);
-//
-//		die(-1, "[rid_requester]: Xgetaddrinfo() error = %d", errno);
-//	}
-//
-//	sockaddr_x * listenCIDDag = (sockaddr_x *) localAddrInfo->ai_addr;
-//	Graph listenCIDGraph = Graph(listenCIDDag);
-
-	// 4.3) the actual XbindPush() call
-	if (XbindPush(
-			xCIDListenSock,
-			(struct sockaddr *) listenAddr,
-			sizeof(listenAddr)) < 0) {
-
-		Xclose(xSock);
-		Xclose(xCIDListenSock);
-
-		die(	-1,
-				"[rid_requester]: unable to Xbind() to DAG %s error = %d",
-				Graph(listenAddr).dag_string().c_str(),
-				errno);
-	}
-
-	say("[rid_requester]: will listen to CID packets directed at: %s\n",
-			Graph(listenAddr).dag_string().c_str());
-
-	// 4.4) start listening to CID responses
+	// 4.4) start listening to RID responses
 	// FIXME: ... for now, in an endless loop. this is likely to change in the
 	// future after i receive some feedback from prs on the RID protocols
+	sockaddr_x rid_resp_src;
+	socklen_t rid_resp_src_len = sizeof(rid_resp_src);
+
+	// a buffer for the RID response(s)
+	unsigned char rid_resp[RID_MAX_PACKET_SIZE];
+	int rid_resp_len = sizeof(rid_resp);
+
 	while (1) {
 
-		char chunkBuf[XIA_MAXBUF];
-		ChunkInfo * info = (ChunkInfo *) malloc(sizeof(ChunkInfo));
-		memset(chunkBuf, 0, sizeof(chunkBuf));
+		say("[rid_requester]: listening for new responses...\n");
 
-		say("[rid_requester]: listening for new chunks...\n");
+		int bytes_rcvd = -1;
 
-		int nBytesRcv = -1;
+		// cleanup rid_resp just in case...
+		memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
 
-		// 4.4.1) XrecvChunkfrom() blocks while waiting for something to
-		// appear on xCIDListenSock
-		if ((nBytesRcv = XrecvChunkfrom(
-										xCIDListenSock,
-										chunkBuf,
-										sizeof(chunkBuf),
-										0,
-										info)) < 0) {
+		// 4.4.1) Xrecvfrom() blocks while waiting for something to
+		// appear on x_sock
+		if ((bytes_rcvd = Xrecvfrom(
+								x_sock,
+								rid_resp,
+								rid_resp_len,
+								0,
+								(struct sockaddr *) &rid_resp_src,
+								&rid_resp_src_len)) < 0) {
 
-			die(-1, "[rid_requester]: XrecvChunkfrom() error = %d", errno);
+			die(-1, "[rid_requester]: Xrecvfrom() error = %d", errno);
 
 		} else {
 
-			say("[rid_requester]: received chunk "\
-					"\n\t[CID]: %s"\
-					"\n\t[SIZE]: %d\n"\
-					"\n\t[TIMESTAMP]: %ld\n"\
-					"\n\t[CONTENT]: %s\n",
-					info->cid,
-					info->size,
-					info->timestamp.tv_sec,
-					chunkBuf);
+			say("[rid_requester]: received RID response: "\
+					"\n\t[SRC. ADDR]: %s"\
+					"\n\t[PAYLOAD]: %s"\
+					"\n\t[SIZE]: %d\n",
+					Graph(rid_resp_src).dag_string().c_str(),
+					rid_resp,
+					rid_resp_len);
+
+			// 4.3) use the CID given in the payload to fetch content from the 
+			// local cache, using xcache interfaces
+			sockaddr_x * cid_resp_addr = to_cid_addr(rid_resp);
+
+			// cleanup rid_resp just in case...
+			memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
+
+			// 4.4) use XfetchChunk() to get the CID's content
+			if (XfetchChunk(
+							xcache_handle, 
+							rid_resp, rid_resp_len, 
+							0, 
+							cid_resp_addr, sizeof(*cid_resp_addr)) < 0) {
+
+				warn("[rid_requester]: XfetchChunk() error = %d", errno);
+
+			} else {
+
+				say("[rid_requester]: contents of included CID: "\
+						"\n\t[CID]: %s"\
+						"\n\t[CONTENT]: %s"\
+						"\n\t[SIZE]: %d\n",
+						Graph(cid_resp_addr).dag_string().c_str(),
+						rid_resp,
+						rid_resp_len);
+			}
+
+			free(cid_resp_addr);
 		}
 	}
 
 	// ************************************************************************
-	// 5) this is rid_requester, signing off...
+	// 5) close everything
 	// ************************************************************************
-	say("[rid_requester]: shutting down");
+	say("[rid_requester]: this is rid_requester, signing off...");
 
-	Xclose(xSock);
-	Xclose(xCIDListenSock);
+	Xclose(x_sock);
+
+	free(name);
+	free(rid_string);
+	free(rid_dest_addr);
 
 	exit(rc);
 }

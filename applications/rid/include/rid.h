@@ -22,6 +22,8 @@
 
 #include "xia.h"
 #include "bloom.h"
+#include "Xsocket.h"
+#include "dagaddr.hpp"
 
 // @RID: the 'type string' for the RID principal type, as defined in /etc/xids
 #define XID_TYPE_RID (const char *) "RID"
@@ -39,7 +41,19 @@ void say(const char *fmt, ...);
 void warn(const char *fmt, ...);
 void die(int ecode, const char * fmt, ...);
 
-void bloomifyPrefix(struct bloom * bloomFilter, char * _prefix);
-char * toRIDString(unsigned char * xid);
+char * name_to_rid(char * name);
+char * to_rid_string(unsigned char * xid);
+
+void to_rid_addr(
+	char * rid_string, 
+	char * ad, 
+	char * hid,
+	sockaddr_x * rid_addr,
+	socklen_t * rid_addr_len);
+
+void to_cid_addr(
+	char * cid_string,
+	sockaddr_x * cid_addr,
+	socklen_t * cid_addr_len);
 
 #endif

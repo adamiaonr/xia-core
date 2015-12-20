@@ -27,6 +27,7 @@
 #include "Xsocket.h"
 #include "dagaddr.hpp"
 #include "rid.h"
+#include "xcache.h"
 
 #define VERSION "v0.1"
 #define TITLE "XIA RID Producer Application"
@@ -39,90 +40,64 @@ char PRODUCER_AID[4 + (XID_SIZE * 2) + 1];
 char PRODUCER_HID[4 + (XID_SIZE * 2) + 1];
 char PRODUCER_4ID[4 + (XID_SIZE * 2) + 1];
 
-int sendRIDResponse(
-		ChunkContext * ctx,
-		struct sockaddr * ridReqSrc,
-		socklen_t ridReqSrcLen) {
+int send_rid_response(
+		XcacheHandle * xcache_handle,
+		sockaddr_x * rid_req_src,
+		socklen_t rid_req_src_len) {
 
-	// what does sendRIDResponse() do?
+	// what does send_rid_response() do?
 	// 	1) generate a sensor value
-	//	2) send it to ridReqSrc using XpushChunk (which also saves the
-	// 		resulting chunk in the local CID cache)
+	//	2) send it to rid_req_src using xcache's interfaces
 
 	int rc = 0;
 
-	// generate a sensor value, save it in valueStr according to a some
+	// 1) generate a sensor value, save it in value_str according to a some
 	// format
-	char valueStr[128] = {'\0'};
+	char value_str[128] = {'\0'};
 	snprintf(
-			valueStr,
+			value_str,
 			128,
 			"timestamp:%u:temperature:%d:unit:degC",
 			(unsigned) time(NULL),
 			(rand() % 111 + (-50)));
 
-	// send it over to ridReqSrc using XpushChunkto
-	ChunkInfo * toCache = (ChunkInfo *) calloc(1, DEFAULT_CHUNK_SIZE);
+	// 2) send the value to rid_req_src, using xcache's XpushChunkto
+	sockaddr_x cid_value_addr;
 
 	if ((rc = XpushChunkto(
-			ctx,
-			valueStr,
-			strlen(valueStr),
-			0,	// XXX: not currently used by XpushChunkto
-			(struct sockaddr *) &ridReqSrc,
-			ridReqSrcLen,
-			toCache)) < 0) {
+			xcache_handle,
+			value_str,
+			strlen(value_str),
+			&cid_value_addr,
+			rid_req_src,
+			rid_req_src_len)) < 0) {
 
 		warn("[rid_producer]: XpushChunkto() error = %d", errno);
 
 	} else {
 
-		say("[rid_producer]: 'pushed' RID response:"\
+		say("[rid_producer]: 'Xpushed' RID response:"\
 				"\n\t[DST_DAG] = %s"\
-				"\n\t[PAYLOAD] = %s"\
-				"\n\t[CID] = %s"\
-				"\n\t[TTL] = %ld"\
-				"\n\t[TIMESTAMP] = %ld\n",
-				Graph((sockaddr_x *) ridReqSrc).dag_string().c_str(),
-				valueStr,
-				toCache->cid,
-				toCache->ttl,
-				(long int) (toCache->timestamp.tv_sec));
+				"\n\t[RID PAYLOAD] = %s"\
+				"\n\t[CID PAYLOAD] = %s\n",
+				Graph((sockaddr_x *) rid_req_src).dag_string().c_str(),
+				Graph(cid_value_addr).dag_string().c_str(),
+				value_str);
 	}
-
-	// don't need the ChunkInfo anymore...
-	// FIXME: ... i think.
-	free(toCache);
 
 	return rc;
 }
 
 int main(int argc, char **argv)
 {
-	// file descriptors for 'SOCK_DGRAM' and 'XSOCK_CHUNK' Xsockets:
-	//
-	//	-# ('SOCK_DGRAM':xRIDListenSock): Xbind()s to a single RID associated
-	//		with the values produced by this app. E.g. say
-	//		this app produces temperature values under the general
-	//		URL-like name = '/cmu/ece/rmcic/2221c/sensor/temperature/'. the app
-	//		will create an 'SOCK_DGRAM' Xsocket and Xbind() it to a DAG
-	//		of the style AD:HID:RID_app, in which
-	//		RID_app = toRIDString(bloomifyPrefix(name)).
-	//		FIXME: for now we use a single RID, multiple RIDs should be
-	//		used in the future...
-	//
-	//	-# ('XSOCK_CHUNK':xCIDPushSock): used to 'push' CID packets to the
-	//		network, as a response to RID packets arriving at xRIDListenSock,
-	//		listening at AD:HID:RID_app. the responses should be directed
-	//		to the source address of RID requests, and sent via XpushChunkTo().
-	//		XXX: to use XpushSock() one must initialize a ChunkContext * via
-	//		XallocCacheSlice(), which takes care of the creation of a
-	// 		XSOCK_CHUNK socket. so no need to explicitly create xCIDPushSock.
-	int xRIDListenSock = 0;
-	//int xCIDPushSock = 0;
+	int x_sock = 0;
 
 	char * name = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
-	char * ridString = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
+	char * rid_string;
+
+	// initialize the producer's xcache handle
+	XcacheHandle * xcache_handle = NULL; 
+	XcacheHandleInit(xcache_handle);
 
 	// similarly to other XIA example apps, print some initial info on the app
 	say("\n%s (%s): started\n", TITLE, VERSION);
@@ -172,122 +147,95 @@ int main(int argc, char **argv)
 	}
 
 	// ************************************************************************
-	// 2) create RID for listening
+	// 2) create RID to be served by this producer
 	// ************************************************************************
-
-	// 2.1) generate the RID as a bloom filter (BF) out of the given name.
-	// resulting 20 byte array (unsigned char *) is obtained via ridBloom.bf[].
-	struct bloom ridBloom;
-
 	if (name[0] != '\0') {
 
-		bloomifyPrefix(&ridBloom, name);
+		rid_string = name_to_rid(name);
 
 	} else {
-		// 2.1.1) if no prefix has been specified, no point going on...
-		die(-1, "[rid_producer]: name string is empty");
+
+		// 2.1) if no name has been specified, no point going on...
+		die(-1, "[rid_producer]: name string is empty\n");
 	}
 
-	// 2.2) transform byte array into string w/ format "RID:[40 char]"
-	// FIXME: this RID will later be used as the SID arg in Xbind()
-	ridString = toRIDString(ridBloom.bf);
-
 	// ************************************************************************
-	// 3) create xRIDListenSock
+	// 3) create x_sock, bind() it to the created RID, listen for RID requests
 	// ************************************************************************
 
-	// 3.1) xRIDListenSock
-	if ((xRIDListenSock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
+	// 3.1) x_sock
+	if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
 		die(-1, "[rid_producer]: Xsocket(SOCK_DGRAM) error = %d", errno);
 	}
 
 	// 3.2) get the localhost address of the producer (AD:HID components)
     if (XreadLocalHostAddr(
-    		xRIDListenSock,
+    		x_sock,
 			PRODUCER_AID, sizeof(PRODUCER_AID),
 			PRODUCER_HID, sizeof(PRODUCER_HID),
 			PRODUCER_4ID, sizeof(PRODUCER_4ID)) < 0 ) {
 
 		die(	-1,
-				"[rid_producer]: reading localhost address\n");
+				"[rid_producer]: error reading localhost address\n");
     }
 
-	// 3.2) create a local RID DAG, in the style AD:HID:RID (= ridString).
-	Node n_src;
-	Node n_ad(Node::XID_TYPE_AD, PRODUCER_AID);
-	Node n_hid(Node::XID_TYPE_HID, PRODUCER_HID);
-	Node n_rid(XID_TYPE_RID, ridString);
+	// 3.2) create a local RID DAG, in the style AD:HID:RID (= rid_string).
+    sockaddr_x rid_local_addr;
+    socklen_t rid_local_addr_len;
 
-	Graph finalGraph = n_src * n_ad * n_hid * n_rid;
+	to_rid_addr(
+		rid_string, 
+		PRODUCER_AID,
+		PRODUCER_HID,
+		&rid_local_addr,
+		&rid_local_addr_len);
 
-	// 3.3) create a sockaddr_x out of the RID DAG
-	sockaddr_x * listenRIDAddr = (sockaddr_x *) malloc(sizeof(sockaddr_x));
-	finalGraph.fill_sockaddr(listenRIDAddr);
-
-	// 3.4) bind xRIDListenSock to listenRIDAddr
+	// 3.3) bind x_sock to rid_local_addr
 	if (Xbind(
-			xRIDListenSock,
-			(struct sockaddr *) listenRIDAddr,
-			sizeof(listenRIDAddr)) < 0) {
+			x_sock,
+			(struct sockaddr *) &rid_local_addr,
+			rid_local_addr_len) < 0) {
 
-		Xclose(xRIDListenSock);
+		Xclose(x_sock);
 
 		die(	-1,
 				"[rid_producer]: unable to Xbind() to DAG %s error = %d",
-				Graph(listenRIDAddr).dag_string().c_str(),
+				Graph(&rid_local_addr).dag_string().c_str(),
 				errno);
 	}
 
 	say("[rid_producer]: will listen to RID packets directed at: %s",
-			Graph(listenRIDAddr).dag_string().c_str());
+			Graph(&rid_local_addr).dag_string().c_str());
 
 	//*************************************************************************
 	// 4) launch RID request listener
 	//*************************************************************************
 
-	// 4.1) initialize a 'ChunkContext', whatever
-	// that is... which in its turn initializes an XSOCK_CHUNK socket by
-	// itself
-	// FIXME: values picked up from applications/multicast/multicast_source.c:
-	//	-# policy: POLICY_FIFO | POLICY_REMOVE_ON_EXIT (exactly what it sounds)
-	//	-# ttl: 0, means permanent caching
-	//	-# size: max. size for the cache slice (size in what units? bananas?)
-	ChunkContext * xCIDPushContext = XallocCacheSlice(
-										POLICY_FIFO | POLICY_REMOVE_ON_EXIT,
-										DEFAULT_CACHE_SLICE_TTL,
-										DEFAULT_CACHE_SLICE_SIZE);
-
-	if (xCIDPushContext == NULL) {
-		die(-1, "[rid_producer]: unable to initialize the 'cache slice'");
-	}
-
-	// 4.2) start listening to RID requests...
+	// 4.1) start listening to RID requests...
 	// FIXME: ... for now, in an endless loop (with select())
 
-	// 4.2.1) create variables to hold src and dst addresses of the RID request.
-	// src will be directly set by Xrevfrom(), while dst is implicit (the
-	// xRIDListenSock socket should only get requests for the prefix bound
-	// to the socket)
-	sockaddr_x ridReqSrc;
-	socklen_t ridReqSrcLen = sizeof (ridReqSrc);
+	// 4.2.1) create variables to hold src and dst addresses of the 
+	// RID request. src will be directly set by Xrevfrom(), while dst 
+	// is implicit (the x_sock socket should only get requests for the 
+	// prefix bound to the socket)
+	sockaddr_x rid_req_src;
+	socklen_t rid_req_src_len;
 
 	// 4.2.2) a buffer for the whole RID request (have no idea what it should
 	// contain for now)
-	unsigned char ridReq[RID_MAX_PACKET_SIZE];
-	int ridReqLen = sizeof (ridReq);
-
-	int rc = 0;
+	unsigned char rid_req[RID_MAX_PACKET_SIZE];
+	int rid_req_len = sizeof(rid_req);
 
 	// XXX: select() parameters, initialized as in xping.c
-	int fdmask = 1 << xRIDListenSock;
-
+	int rc = 0;
+	int fdmask = 1 << x_sock;
 	struct timeval timeout;
 	timeout.tv_sec = 0;
 	timeout.tv_usec = 100000;
 
 	while(1) {
 
-		// 4.3) check what's going on with xRIDListenSock...
+		// 4.3) check what's going on with x_sock...
 		rc = select(32, (fd_set *) &fdmask, 0, 0, &timeout);
 
 		if (rc == 0) {
@@ -298,12 +246,12 @@ int main(int argc, char **argv)
 
 			// 4.3.2) select() says there's something for us.
 			if ((rc = Xrecvfrom(
-								xRIDListenSock,
-								ridReq,
-								ridReqLen,
+								x_sock,
+								rid_req,
+								rid_req_len,
 								0,
-								(struct sockaddr *) &ridReqSrc,
-								&ridReqSrcLen)) < 0) {
+								(struct sockaddr *) &rid_req_src,
+								&rid_req_src_len)) < 0) {
 
 				if (errno == EINTR)
 					continue;
@@ -312,38 +260,35 @@ int main(int argc, char **argv)
 					continue;
 			}
 
-			// 4.3.3) we assume that the packet has been verified as an RID
-			// packet, and that the RID carried by the dst DAG can be served
-			// by this endpoint.
 			say("[rid_producer]: got request from:"\
 					"\n\t[SRC_DAG] = %s",
-					Graph((sockaddr_x *) &ridReqSrc).dag_string().c_str());
+					Graph((sockaddr_x *) &rid_req_src).dag_string().c_str());
 
 			// TODO: the application should also be able to verify other issues
 			// e.g. if the requested name in its `original' form, etc. to
 			// distinguish BF false positives (FPs). this information should
 			// somehow be included in an RID extension header (e.g. like
 			// a ContentHeader).
-			sendRIDResponse(
-					xCIDPushContext,
-					(struct sockaddr *) &ridReqSrc,
-					ridReqSrcLen);
+			send_rid_response(
+					xcache_handle,
+					&rid_req_src,
+					rid_req_src_len);
 
 		} else {
+
 			die(-1, "[rid_producer]: select() error = %d", errno);
 		}
 	}
 
 	// ************************************************************************
-	// 5) this is rid_requester, signing off...
+	// 5) close everything
 	// ************************************************************************
-	say("[rid_producer]: shutting down");
+	say("[rid_producer]: this is rid_requester, signing off...");
 
-	XfreeCacheSlice(xCIDPushContext);
-	Xclose(xRIDListenSock);
+	Xclose(x_sock);
 
 	free(name);
-	free(ridString);
+	free(rid_string);
 
 	exit(rc);
 }

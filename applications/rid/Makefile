@@ -28,7 +28,7 @@ endif
 # search for libs here
 LDFLAGS += -Llib/libbloom/build
 # add these libs for linking
-LIB += -lbloom $(LIBS)
+LIB += -lbloom ../../daemons/xcache/api/libxcache.a -lpthread -lssl -lcrypto -lprotobuf $(LIBS)
 # special include dirs to add
 INC += -I include -I lib/libbloom
 
