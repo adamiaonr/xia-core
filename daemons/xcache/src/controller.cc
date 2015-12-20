@@ -514,6 +514,116 @@ void xcache_controller::send_content_remote(int sock, sockaddr_x *mypath)
 	}
 }
 
+int xcache_controller::send_content_to_remote(xcache_cmd * cmd) 
+{
+	// everything we need is wrapped in the xcache_cmd, so let's unwrap it:
+	//	-# cid (string form)
+	char * cid = (char *) cmd->cid().c_str();
+
+	//	-# dst_addr 
+	//	-# dst_addr_len
+	// FIXME: don't know if this memcpy() technique will work...
+	sockaddr_x dst_addr;
+	size_t dst_addr_len = cmd->dag().length();
+	memcpy(&dst_addr, cmd->dag().c_str(), dst_addr_len);
+
+	// 	-# data, data_len
+	char * data = (char *) cmd->data().c_str();
+	size_t data_len = cmd->data().length();
+
+	// print everything for debugging purposes...
+	LOG_CTRL_INFO("[CID]: %s\n", cid);
+	LOG_CTRL_INFO("[DST DAG]: %s\n", Graph(&dst_addr).dag_string().c_str());
+	LOG_CTRL_INFO("[DATA]: %s\n", data);
+
+	// create a temp socket to deliver send the CID push
+	int x_sock = 0;
+
+	if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
+
+		LOG_CTRL_ERROR("Xsocket(SOCK_DGRAM) error = %d\n", errno);
+
+		return -1;
+	}
+
+	// FIXME: can we get away with binding this socket to a CID DAG?
+	sockaddr_x cid_addr;
+	socklen_t cid_addr_len;
+
+	// build a simple CID DAG
+	Node n_src;
+	Node n_cid(XID_TYPE_CID, cid);	
+	Graph cid_dag = n_src * n_cid;
+
+	// finally, get the sockaddr_x * struct
+	cid_dag.fill_sockaddr(&cid_addr);
+	cid_addr_len = sizeof(sockaddr_x);
+
+	if (Xbind(
+		x_sock,
+		(struct sockaddr *) &cid_addr,
+		cid_addr_len) < 0) {
+
+		Xclose(x_sock);
+
+		LOG_CTRL_ERROR(
+			"Unable to Xbind() to DAG %s error = %d",
+			Graph(&cid_addr).dag_string().c_str(),
+			errno);
+
+		return -1;
+	}
+
+	// send the data to dst_addr through x_sock, using Xsendto()
+	size_t remaining = strlen(data);
+	size_t offset = 0;
+
+	// in this case, we only send one chunk, of size XIA_MAXBUF
+//	while(remaining > 0) {
+
+	char data_to_push[XIA_MAXBUF];
+	size_t data_to_push_size = MIN(XIA_MAXBUF, remaining);
+
+	// FIXME: we should replace this with an RID header in the future...
+	struct cid_header header;
+	size_t header_size = sizeof(header);
+
+	if(data_to_push_size + header_size > XIA_MAXBUF) {
+
+		data_to_push_size -= header_size;
+	}
+
+	header.offset = offset;
+	header.length = data_to_push_size;
+	header.total_length = data_len;
+	strcpy(header.cid, cid);
+
+	memcpy(data_to_push, &header, header_size);
+	memcpy(data_to_push + header_size, data + offset, data_to_push_size);
+
+	remaining -= data_to_push_size;
+
+	if(Xsendto(
+		x_sock,
+		data_to_push,
+		data_to_push_size + header_size,
+		0,
+		(struct sockaddr *) &dst_addr,
+		dst_addr_len) < 0) {
+
+		LOG_CTRL_ERROR("Xsendto() error = %d", errno);
+
+		return -1;
+	}
+
+	offset += data_to_push_size;
+//	}
+
+	Xclose(x_sock);
+
+	return 0;
+}
+
 int xcache_controller::create_sender(void)
 {
 	char sid_string[strlen("SID:") + XIA_SHA_DIGEST_STR_LEN];
@@ -629,6 +739,10 @@ void xcache_controller::process_req(xcache_req *req)
 	case xcache_cmd::XCACHE_SENDCHUNK:
 		send_content_remote(req->to_sock, (sockaddr_x *)req->data);
 		break;
+	case xcache_cmd::XCACHE_PUSH:
+		cmd = (xcache_cmd *) req->data;
+		send_content_to_remote(cmd);
+		break;
 	}
 
 	if(req->flags & XCFI_REMOVEFD) {
@@ -649,6 +763,8 @@ void *xcache_controller::worker_thread(void *arg)
 		if(req)
 			ctrl->process_req(req);
 	}
+
+	return NULL;
 }
 
 void xcache_controller::run(void)

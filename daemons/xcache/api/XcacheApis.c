@@ -401,6 +401,96 @@ inline int XbufPut(XcacheHandle *h, XcacheBuf *xbuf, size_t chunkSize, sockaddr_
 	return XputBuffer(h, xbuf->buf, xbuf->length, chunkSize, addrs);
 }
 
+/**
+ * \brief send a datagram style chunk to an address (e.g. HID, SID)
+ * 
+ * the flow of this call goes like this:
+ * 	-# store the data (a single chunk) and get its cid back
+ * 	-# create a temp DGRAM socket, send the chunk to dest_addr
+ * 
+ * \return XCACHE_OK if successful
+ */
+int XpushChunkto(
+		XcacheHandle * h, 
+		const void * data, 
+		size_t data_len, 
+		sockaddr_x * cid_info,
+		sockaddr_x * dst_addr, 
+		socklen_t dst_addr_len)
+{
+	int rc = 0;
+
+	// 1) store the chunk in the local cache, using XputChunk. this will 
+	// give us back a cid, created during the store operation
+	if ((rc = XputChunk(h, data, data_len, cid_info)) < 0) {
+
+		fprintf(stderr, "%s: error in storing chunk (%d)\n", __func__, rc);
+
+		//return -1;
+	}
+
+	// 1.1) if data is too large, send only what we can
+	if (data_len > XIA_MAXBUF) {
+
+		fprintf(stderr, 
+			"%s: truncating data from size %lu to XIA_MAXBUF %d byte\n", 
+			__func__,
+			data_len, XIA_MAXBUF);
+
+		data_len = XIA_MAXBUF;
+	}
+
+	// 2) 'push' the chunk towards dest_addr
+	xcache_cmd cmd;
+
+	// 2.1) the attributes of the xcache command are:
+	//	-# cmd code: XCACHE_PUSH
+	//	-# context id
+	//	-# cid: cid_info (in string form)
+	//	-# dest dag: dst_addr, dst_addr_len
+	//	-# data
+	// 	-# flags
+	cmd.set_cmd(xcache_cmd::XCACHE_PUSH);
+	cmd.set_context_id(h->contextID);
+	// FIXME: we pass cid in string form, since XputChunk does not return 
+	// cid_addr_len
+	cmd.set_cid(Graph((sockaddr_x *) cid_info).dag_string().c_str());
+	cmd.set_dag(dst_addr, dst_addr_len);
+	cmd.set_data(data, data_len);
+	cmd.set_flags(XCF_DATACHUNK);
+
+	if((rc = send_command(h->xcacheSock, &cmd)) < 0) {
+
+		fprintf(stderr, 
+			"%s: Error in sending command to xcache (%d)\n", 
+			__func__, 
+			rc);
+
+		return -1;
+	}
+
+	// FIXME: this isn't entirely correct, as we should confirm the 
+	// success of the command via a response.
+
+
+	// if((rc = get_response_blocking(h->xcacheSock, &cmd)) < 0) {
+		
+	// 	fprintf(stderr, 
+	// 		"%s: Did not get a valid response from xcache (%d)\n", 
+	// 		__func__,
+	// 		rc);
+
+	// 	return -1;
+	// }
+
+	// fprintf(stderr, 
+	// 	"%s: Got a valid response from server (%d)\n", 
+	// 	__func__, 
+	// 	rc);
+
+	return xcache_cmd::XCACHE_OK;
+}
+
 /* Content Fetching APIs */
 int XfetchChunk(XcacheHandle *h, void *buf, size_t buflen, int flags, sockaddr_x *addr, socklen_t len)
 {

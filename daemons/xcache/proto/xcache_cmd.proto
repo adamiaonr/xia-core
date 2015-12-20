@@ -15,6 +15,8 @@ message xcache_cmd {
 		XCACHE_GET_STATUS = 12;
 		XCACHE_READ = 13;
 		XCACHE_SENDCHUNK = 14;
+
+		XCACHE_PUSH = 15;	/* added by RID experiments */
 	};
 
 	enum status_type {
