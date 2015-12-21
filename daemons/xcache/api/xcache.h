@@ -6,9 +6,9 @@
 #include <stdint.h>
 #include "../common/xcache_events.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// #ifdef __cplusplus
+// extern "C" {
+// #endif
 
 #define CIDLEN 512
 
@@ -53,7 +53,7 @@ int XputBuffer(XcacheHandle *h, const void *data, size_t length, size_t chunkSiz
 int XputMetaChunk(XcacheHandle *h, sockaddr_x *metachunk, sockaddr_x *addrs, socklen_t addrlen, int count); //DONE
 int XpushChunkto(
 		XcacheHandle * h, 
-		const void * data, 
+		const char * data, 
 		size_t data_len, 
 		sockaddr_x * cid_info,		// cid to be attributed to chunk 
 		sockaddr_x * dst_addr, 		// dest address for the chunk (e.g. a DAG)
@@ -78,8 +78,8 @@ int XlaunchNotifThread(XcacheHandle *h);  //DONE
 int XgetNotifSocket(XcacheHandle *h);
 int XprocessNotif(XcacheHandle *h);
 
-#ifdef __cplusplus
-}
-#endif
+// #ifdef __cplusplus
+// }
+// #endif
 
 #endif
