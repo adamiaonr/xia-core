@@ -25,8 +25,8 @@
 #define VERSION "v0.1"
 #define TITLE "XIA RID Requester Application"
 
-#define RID_REQUEST_DEFAULT_AD 	"1000000000000000000000000000000000000002"
-#define RID_REQUEST_DEFAULT_HID	"0000000000000000000000000000000000000005"
+#define RID_REQUEST_DEFAULT_AD 	(char *) "1000000000000000000000000000000000000002"
+#define RID_REQUEST_DEFAULT_HID	(char *) "0000000000000000000000000000000000000005"
 
 #define SID_REQUESTER "SID:00000000dd41b924c1001cfa1e1117a812492434"
 
@@ -143,11 +143,16 @@ int main(int argc, char **argv)
 
 	// 3.3) send the RID request
 	int rid_packet_len = 0;
-	sockaddr_x * rid_dest_addr = 
-			to_rid_addr(
-				rid_string, 
-				RID_REQUEST_DEFAULT_AD,
-				RID_REQUEST_DEFAULT_HID);
+
+	sockaddr_x rid_dest_addr;
+	socklen_t rid_dest_addr_len;
+
+	to_rid_addr(
+		rid_string, 
+		RID_REQUEST_DEFAULT_AD,
+		RID_REQUEST_DEFAULT_HID,
+		&rid_dest_addr,
+		&rid_dest_addr_len);
 
 	// 3.3.1) TODO: what should be set in the payload? send the full name for 
 	// now...
@@ -158,7 +163,7 @@ int main(int argc, char **argv)
 	say("[rid_requester]: sending RID request:"\
 			"\n\t[DST_DAG] = %s"\
 			"\n\t[PAYLOAD] = %s\n",
-			Graph(rid_dest_addr).dag_string().c_str(),
+			Graph(&rid_dest_addr).dag_string().c_str(),
 			rid_packet_payload);
 	
 	int rc = 0;
@@ -168,8 +173,8 @@ int main(int argc, char **argv)
 			rid_packet_payload,
 			rid_packet_len,
 			0,
-			(struct sockaddr *) rid_dest_addr,
-			sizeof(*rid_dest_addr));
+			(struct sockaddr *) &rid_dest_addr,
+			rid_dest_addr_len);
 
 	// 3.2) check status of RID request
 	if (rc < 0 || rc != rid_packet_len) {
@@ -182,7 +187,7 @@ int main(int argc, char **argv)
 				"\n\t[DST_DAG] = %s"\
 				"\n\t[PAYLOAD] = %s"\
 				"\n\t[RETURN_CODE] = %d\n",
-				Graph(rid_dest_addr).dag_string().c_str(),
+				Graph(&rid_dest_addr).dag_string().c_str(),
 				rid_packet_payload,
 				rc);
 
@@ -200,10 +205,10 @@ int main(int argc, char **argv)
 	// FIXME: ... for now, in an endless loop. this is likely to change in the
 	// future after i receive some feedback from prs on the RID protocols
 	sockaddr_x rid_resp_src;
-	socklen_t rid_resp_src_len = sizeof(rid_resp_src);
+	socklen_t rid_resp_src_len = sizeof(sockaddr_x);
 
 	// a buffer for the RID response(s)
-	unsigned char rid_resp[RID_MAX_PACKET_SIZE];
+	char rid_resp[RID_MAX_PACKET_SIZE];
 	int rid_resp_len = sizeof(rid_resp);
 
 	while (1) {
@@ -233,13 +238,16 @@ int main(int argc, char **argv)
 					"\n\t[SRC. ADDR]: %s"\
 					"\n\t[PAYLOAD]: %s"\
 					"\n\t[SIZE]: %d\n",
-					Graph(rid_resp_src).dag_string().c_str(),
+					Graph(&rid_resp_src).dag_string().c_str(),
 					rid_resp,
 					rid_resp_len);
 
 			// 4.3) use the CID given in the payload to fetch content from the 
 			// local cache, using xcache interfaces
-			sockaddr_x * cid_resp_addr = to_cid_addr(rid_resp);
+			sockaddr_x cid_resp_addr;
+			socklen_t cid_resp_addr_len;
+
+			to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
 
 			// cleanup rid_resp just in case...
 			memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
@@ -249,7 +257,7 @@ int main(int argc, char **argv)
 							xcache_handle, 
 							rid_resp, rid_resp_len, 
 							0, 
-							cid_resp_addr, sizeof(*cid_resp_addr)) < 0) {
+							&cid_resp_addr, cid_resp_addr_len) < 0) {
 
 				warn("[rid_requester]: XfetchChunk() error = %d", errno);
 
@@ -259,12 +267,10 @@ int main(int argc, char **argv)
 						"\n\t[CID]: %s"\
 						"\n\t[CONTENT]: %s"\
 						"\n\t[SIZE]: %d\n",
-						Graph(cid_resp_addr).dag_string().c_str(),
+						Graph(&cid_resp_addr).dag_string().c_str(),
 						rid_resp,
 						rid_resp_len);
 			}
-
-			free(cid_resp_addr);
 		}
 	}
 
@@ -277,7 +283,6 @@ int main(int argc, char **argv)
 
 	free(name);
 	free(rid_string);
-	free(rid_dest_addr);
 
 	exit(rc);
 }

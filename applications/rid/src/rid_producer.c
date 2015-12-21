@@ -81,7 +81,7 @@ int send_rid_response(
 				"\n\t[RID PAYLOAD] = %s"\
 				"\n\t[CID PAYLOAD] = %s\n",
 				Graph((sockaddr_x *) rid_req_src).dag_string().c_str(),
-				Graph(cid_value_addr).dag_string().c_str(),
+				Graph(&cid_value_addr).dag_string().c_str(),
 				value_str);
 	}
 

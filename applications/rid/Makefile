@@ -18,19 +18,20 @@ SRCEXT = c
 SOURCES = $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS = $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.o))
 
+# special include dirs to add
+INC += -Iinclude -Ilib/libbloom
+# search for libs here
+LDFLAGS += -Llib/libbloom/build
+
 # debuggin' options
 ifdef DEBUG
 CFLAGS += -g -ggdb -Wall -DDEBUG
-else
-CFLAGS +=-O2
 endif
 
-# search for libs here
-LDFLAGS += -Llib/libbloom/build
+CFLAGS += $(INC) $(LDFLAGS)
+
 # add these libs for linking
-LIB += -lbloom ../../daemons/xcache/api/libxcache.a -lpthread -lssl -lcrypto -lprotobuf $(LIBS)
-# special include dirs to add
-INC += -I include -I lib/libbloom
+LIB += -lbloom -lXsocket -lpthread -lssl -lcrypto -ldagaddr -lxcache -lprotobuf
 
 all: $(RID_PRO_TARGET) $(RID_REQ_TARGET) testrid
 	mkdir -p $(BINDIR)
@@ -39,16 +40,16 @@ all: $(RID_PRO_TARGET) $(RID_REQ_TARGET) testrid
 
 $(RID_PRO_TARGET): $(BUILDDIR)/$(RID_PRO_TARGET).o $(BUILDDIR)/$(COMMON).o
 	@echo " Linking..."
-	@echo " $(CC) $^ -o $(RID_PRO_TARGET) $(LIB)"; $(CC) $^ -o $(RID_PRO_TARGET) $(LDFLAGS) $(LIB)
+	$(CC) $(CFLAGS) -o $(RID_PRO_TARGET) $^ $(LIB)
 
 $(RID_REQ_TARGET): $(BUILDDIR)/$(RID_REQ_TARGET).o $(BUILDDIR)/$(COMMON).o
 	@echo " Linking..."
-	@echo " $(CC) $^ -o $(RID_REQ_TARGET) $(LIB)"; $(CC) $^ -o $(RID_REQ_TARGET) $(LDFLAGS) $(LIB)
+	$(CC) $(CFLAGS) -o $(RID_REQ_TARGET) $^ $(LIB)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
 	make -C lib/libbloom
 	@mkdir -p $(BUILDDIR)
-	@echo " $(CC) $(CFLAGS) $(INC) -c -o $@ $<"; $(CC) $(CFLAGS) $(INC) -c -o $@ $<
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 testrid:
 	make -C test
