@@ -41,7 +41,8 @@ else
 	LIBS=\$(XLIB)/libXsocket.a \$(XLIB)/libdagaddr.a \$(XLIB)/libXssl.a -Bstatic -lprotobuf
 	ENV_LDFLAGS+=-lXsocket -ldagaddr -lXssl -lxcache
 endif
-LIBS+=\$(XCACHEAPIDIR)/libxcache.a
+#LIBS+=\$(XCACHEAPIDIR)/libxcache.a
+LIBS+=\$(XCACHEAPIDIR)/libxcache.so
 
 ifdef DEBUG
 CFLAGS +=-ggdb -DDEBUG
