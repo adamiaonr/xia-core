@@ -21,6 +21,7 @@
 
 #include "rid.h"
 #include "xcache.h"
+#include "dagaddr.hpp"
 
 #define VERSION "v0.1"
 #define TITLE "XIA RID Requester Application"

@@ -31,10 +31,13 @@ CFLAGS += $(INC)
 # add these libs for linking
 LIB += -lrid -lXsocket -ldagaddr -lxcache
 
-# EXTRA: required due to the secondary linking (librid.so -> libbloom.so)
-LIB += -Wl,-rpath=$(RIDAPIDIR)/bin
+# EXTRA: required due to avoid overlinking with libbloom (a dependency of 
+# librid). this seems the right way of doing things (see this URL for more 
+# info: http://www.kaizou.org/2015/01/linux-libraries/)
+LIB += -Wl,-rpath-link=$(RIDAPIDIR)/bin
 
 all: $(RID_PRO_TARGET) $(RID_REQ_TARGET)
+	@echo " Moving binaries..."
 	mkdir -p $(BINDIR)
 	mv $(RID_PRO_TARGET) $(BINDIR)
 	mv $(RID_REQ_TARGET) $(BINDIR)
@@ -48,11 +51,12 @@ $(RID_REQ_TARGET): $(BUILDDIR)/$(RID_REQ_TARGET).o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(RID_REQ_TARGET) $^ $(LIB)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
+	@echo " Compiling..."
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:
 	@echo " Cleaning...";
-	@echo " $(RM) -r $(BUILDDIR) $(BINDIR)"; $(RM) -r $(BUILDDIR) $(BINDIR) *~
+	$(RM) -r $(BUILDDIR) $(BINDIR) *~
 
 .PHONY: clean
