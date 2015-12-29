@@ -40,6 +40,44 @@ char PRODUCER_AID[4 + (XID_SIZE * 2) + 1];
 char PRODUCER_HID[4 + (XID_SIZE * 2) + 1];
 char PRODUCER_4ID[4 + (XID_SIZE * 2) + 1];
 
+/*
+** write the message to stdout unless in quiet mode
+*/
+void say(const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+}
+
+/*
+** always write the message to stdout
+*/
+void warn(const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stdout, fmt, args);
+	va_end(args);
+}
+
+/*
+** write the message to stdout, and exit the app
+*/
+void die(int ecode, const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stdout, fmt, args);
+	va_end(args);
+	fprintf(stdout, "[rid]: exiting\n");
+	exit(ecode);
+}
+
 int send_rid_response(
 		XcacheHandle * xcache_handle,
 		sockaddr_x * rid_req_src,

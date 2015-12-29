@@ -30,6 +30,44 @@
 
 #define SID_REQUESTER "SID:00000000dd41b924c1001cfa1e1117a812492434"
 
+/*
+** write the message to stdout unless in quiet mode
+*/
+void say(const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vprintf(fmt, args);
+	va_end(args);
+}
+
+/*
+** always write the message to stdout
+*/
+void warn(const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stdout, fmt, args);
+	va_end(args);
+}
+
+/*
+** write the message to stdout, and exit the app
+*/
+void die(int ecode, const char * fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	vfprintf(stdout, fmt, args);
+	va_end(args);
+	fprintf(stdout, "[rid]: exiting\n");
+	exit(ecode);
+}
+
 int main(int argc, char **argv)
 {
 	// file descriptors for 'SOCK_DGRAM' Xsocket:
