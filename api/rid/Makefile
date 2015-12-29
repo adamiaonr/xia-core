@@ -6,7 +6,6 @@ CC = g++
 SRCDIR = src
 BUILDDIR = build
 BINDIR = bin
-TESTDIR = test
 
 # source files
 COMMON = rid
@@ -16,6 +15,8 @@ SRCEXT = c
 LIBEXT = so
 SOURCES = $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS = $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.o))
+
+TESTDIR = test
 
 # special include dirs to add
 INC += -Iinclude -Ilib/libbloom
@@ -33,21 +34,24 @@ CFLAGS += -fPIC $(INC) $(LDFLAGS)
 LIB += -lbloom -lXsocket -ldagaddr
 
 all: $(BUILDDIR)/librid.$(LIBEXT)
+	@echo " Moving librid.$(LIBEXT)..."
 	mkdir -p $(BINDIR)
 	mv librid.$(LIBEXT) $(BINDIR)
+	@echo " Creating symlink to libbloom.so in $(BINDIR)..."
 	ln -s $(shell pwd)/lib/libbloom/build/libbloom.so $(BINDIR)
+	# @echo " Building test folder..."
+	# make -C test
 
 $(BUILDDIR)/librid.$(LIBEXT): $(BUILDDIR)/$(COMMON).o
-	$(CC) $(CFLAGS) -shared -o librid.$(LIBEXT) $^ $(LIB)
-	rm -f *.o
+	@echo " Linking..."
+	$(CC) $(CFLAGS) -Wl,--no-undefined -shared -o librid.$(LIBEXT) $^ $(LIB)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
+	@echo " Compiling lib/libbloom..."
 	make -C lib/libbloom
+	@echo " Compiling librid sources..."
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -o $@ -c $<
-
-test:
-	make -C $(TESTDIR)
 
 clean:
 	@echo " Cleaning...";

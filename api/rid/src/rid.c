@@ -1,5 +1,6 @@
 #include "rid.h"
 #include "bloom.h"
+#include "dagaddr.hpp"
 
 /**
  * @brief   converts a URL-like prefix to a 20 byte RID

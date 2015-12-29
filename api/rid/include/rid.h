@@ -22,7 +22,6 @@
 
 #include "xia.h"
 #include "Xsocket.h"
-#include "dagaddr.hpp"
 
 // @RID: the type string for the RID principal type, as defined in /etc/xids
 #define XID_TYPE_RID (const char *) "RID"
