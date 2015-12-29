@@ -4,7 +4,7 @@ CC=g++
 SO=so
 
 INC+= -I../../click/include/click
-LIB += -lXsocket -lpthread -lssl -lcrypto -ldagaddr -lprotobuf
+LIB+= -lXsocket -lpthread -lssl -lcrypto -ldagaddr -lprotobuf
 CFLAGS+= -g -Wall -fPIC $(INC)
 OBJS=xcache.o ../common/xcache_sock.o ../bin/xcache_cmd.pb.o
 
