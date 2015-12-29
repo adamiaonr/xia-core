@@ -21,7 +21,7 @@ import getopt
 import datetime
 import telnetlib
 
-# RID Python extension module
+# RID Python C extension module
 import rid
 
 APP_VERSION="0.9"
@@ -51,6 +51,7 @@ class Options:
 		self._commandFile = None
 		self._dumpFile = None
 		self._add = []
+		self._add_prefix = []
 		self._remove = []
 		self._devices = []
 		self._types = []
@@ -64,7 +65,7 @@ class Options:
 			shortopt = "hpnvif:d:a:r:"
 			opts, args = getopt.getopt(sys.argv[1:], shortopt, 
 				["help", "print", "names", "verbose",
-				"host=", "port=", "file=", "dump=", "add=", "remove=",
+				"host=", "port=", "file=", "dump=", "add=", "add_prefix=", "remove=",
 				"device=", "type="])
 		except getopt.GetoptError, err:
 			# print	 help information and exit:
@@ -90,6 +91,9 @@ class Options:
 				self.__haveAction = True
 			elif o in ("-a", "--add"):
 				self._add.append(a)
+				self.__haveAction = True
+			elif o in ("--add_prefix"):
+				self._add_prefix.append(a)
 				self.__haveAction = True
 			elif o in ("-r", "--remove"):
 				self._remove.append(a)
@@ -148,6 +152,12 @@ where:
   --add=<entry>      format of entry is the same as above except the add/del
                      prefix is not used
 
+  --add_prefix=<entry>  : add an RID route. the format is the same as with 
+                          the -f option, except that instead of a 'raw' XID 
+                          for the 'xid' argument, a prefix in its textual form, 
+                          e.g. '/cmu/ece/ph/b33' is provided. the prefix is 
+                          then translated to an XID.
+
   -r <entry>       : remove a route, can be specified multipe times
   --remove=<entry>   format of entry is the same as above except the add/del
                      prefix is not used
@@ -185,6 +195,9 @@ where:
 	
 	def addCommands(self):
 		return self._add
+
+	def addPrefixCommands(self):
+		return self._add_prefix
 	
 	def removeCommands(self):
 		return self._remove
@@ -322,6 +335,12 @@ class XrouteApp:
 		if len(cmds) > 0:
 			for cmd in cmds:
 				self.addRoute(cmd)
+
+        # addPrefix
+        cmds = self.options.addPrefixCommands()
+        if len(cmds) > 0:
+            for cmd in cmds:
+                self.addPrefixRoute(cmd)
 
 		# do the individual delete commands specfied on the cmd line
 		cmds = self.options.removeCommands()
@@ -628,7 +647,7 @@ class XrouteApp:
 	#
 	# only minor error checking is done here, click will do the rest of it
 	#
-	def addRoutePrefix(self, text):
+	def addPrefixRoute(self, text):
 		
 		parts = text.split(",")
 		
