@@ -203,8 +203,8 @@ int main(int argc, char **argv)
     // 2) initialize the producer's xcache handle
     // ************************************************************************
     say("[rid_producer]: initializing xcache handle...\n");
-    XcacheHandle * xcache_handle = NULL; 
-    XcacheHandleInit(xcache_handle);
+    XcacheHandle xcache_handle; 
+    XcacheHandleInit(&xcache_handle);
     say("[rid_producer]: ... done!\n");
 
     // ************************************************************************
@@ -253,7 +253,8 @@ int main(int argc, char **argv)
     }
 
     say("[rid_producer]: will listen to RID packets directed at: %s",
-            Graph(&rid_local_addr).dag_string().c_str());
+        Graph(&rid_local_addr).dag_string().c_str());
+
 
     //*************************************************************************
     // 4) launch RID request listener
@@ -318,7 +319,7 @@ int main(int argc, char **argv)
             // somehow be included in an RID extension header (e.g. like
             // a ContentHeader).
             send_rid_response(
-                    xcache_handle,
+                    &xcache_handle,
                     &rid_req_src,
                     rid_req_src_len);
 
