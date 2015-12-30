@@ -336,11 +336,11 @@ class XrouteApp:
 			for cmd in cmds:
 				self.addRoute(cmd)
 
-        # addPrefix
-        cmds = self.options.addPrefixCommands()
-        if len(cmds) > 0:
-            for cmd in cmds:
-                self.addPrefixRoute(cmd)
+		# addPrefix
+		cmds = self.options.addPrefixCommands()
+		if len(cmds) > 0:
+			for cmd in cmds:
+				self.addPrefixRoute(cmd)
 
 		# do the individual delete commands specfied on the cmd line
 		cmds = self.options.removeCommands()
