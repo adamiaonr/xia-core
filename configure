@@ -51,7 +51,7 @@ LIBS+=\$(XCACHEAPIDIR)/libxcache.so
 LIBS+=\$(RIDAPIDIR)/bin/librid.so
 
 ifdef DEBUG
-CFLAGS +=-ggdb -DDEBUG
+CFLAGS +=-g -ggdb -DDEBUG
 else
 CFLAGS +=-O2
 endif
