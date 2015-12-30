@@ -184,7 +184,7 @@ void to_rid_addr(
     // a built-in type, it will look for it the the user defined types set 
     // in /etc/xids, so this should work...
     Node n_rid(XID_TYPE_RID, &rid_string[4]);
-    printf("n_rid: %s\n", n_rid.to_string().c_str());
+    //printf("n_rid: %s\n", n_rid.to_string().c_str());
 
     // 'fallback' nodes (AD and HID)
     Node n_ad(Node::XID_TYPE_AD, ad);
@@ -194,22 +194,22 @@ void to_rid_addr(
     // in an XSocket API call
     Graph direct_dag = n_src * n_rid;
     direct_dag.print_graph();
-    printf("\n");
+    //printf("\n");
 
     Graph fallback_dag = n_src * n_ad * n_hid * n_rid;
     fallback_dag.print_graph();
-    printf("\n");
+    //printf("\n");
 
     Graph full_dag = direct_dag + fallback_dag;
     full_dag.print_graph();
-    printf("\n");
+    //printf("\n");
 
     // finally, fill the sockaddr_x * struct
     //rid_addr = (sockaddr_x *) malloc(sizeof(sockaddr_x));
     full_dag.fill_sockaddr(rid_addr);
     *rid_addr_len = sizeof(sockaddr_x);
 
-    printf("%s\n", Graph(rid_addr).dag_string().c_str());
+    //printf("%s\n", Graph(rid_addr).dag_string().c_str());
 }
 
 void to_cid_addr(
