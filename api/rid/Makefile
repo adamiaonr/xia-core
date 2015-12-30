@@ -38,7 +38,7 @@ all: $(BUILDDIR)/librid.$(LIBEXT)
 	mkdir -p $(BINDIR)
 	mv librid.$(LIBEXT) $(BINDIR)
 	@echo " Creating symlink to libbloom.so in $(BINDIR)..."
-	ln -s $(shell pwd)/lib/libbloom/build/libbloom.so $(BINDIR)
+	ln -sf $(shell pwd)/lib/libbloom/build/libbloom.so $(BINDIR)
 	# @echo " Building test folder..."
 	# make -C test
 
