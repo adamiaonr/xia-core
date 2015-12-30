@@ -2840,7 +2840,7 @@ void XTRANSPORT::Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 		//TODO: Add a check to see if XID is already being used
 
 		// @RID: hack to add RIDs to PATRICIA trie RIDtoSock map
-		if (source_xid.type() == XidMap::id("RID")) {
+		if (htonl(source_xid.type()) == XidMap::id("RID")) {
 
 			// 1) find the Hamming Weight (HW) of the RID
 			int hw = rid_calc_weight(source_xid);
