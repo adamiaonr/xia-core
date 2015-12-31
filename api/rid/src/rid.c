@@ -193,15 +193,15 @@ void to_rid_addr(
     // create the final DAG and a sockaddr_x * struct which can be used
     // in an XSocket API call
     Graph direct_dag = n_src * n_rid;
-    direct_dag.print_graph();
+    //direct_dag.print_graph();
     //printf("\n");
 
     Graph fallback_dag = n_src * n_ad * n_hid * n_rid;
-    fallback_dag.print_graph();
+    //fallback_dag.print_graph();
     //printf("\n");
 
     Graph full_dag = direct_dag + fallback_dag;
-    full_dag.print_graph();
+    //full_dag.print_graph();
     //printf("\n");
 
     // finally, fill the sockaddr_x * struct
