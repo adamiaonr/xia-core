@@ -2850,7 +2850,7 @@ void XTRANSPORT::Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 
 				// 2.1) if yes, create an new root entry
 				XIARIDPatricia<sock> * root =
-						new XIARIDPatricia<sock>();
+						new XIARIDPatricia<sock>(XIARIDPatricia<sock>::ROOT_NODE);
 
 				// 2.2) ... and add it to RIDtoSock[hw]
 				RIDtoSock[hw] = root;
@@ -2858,7 +2858,6 @@ void XTRANSPORT::Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 
 			// 3) insert the RID in the RIDtoSock[hw] : the RID PT insert()
 			// operation already includes a duplicate RID check
-
 			if (!(RIDtoSock[hw]->insert(source_xid, sk))) {
 
 				ERROR("duplicate RID on RIDtoSock map: ",

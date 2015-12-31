@@ -35,13 +35,24 @@ CLICK_DECLS
  * 			RID-like matching.
  *
  * XXX: to make this class usable by different Click elements, we make this a
- * class template, hence why the implementation of the member functions in
+ * class template: this explains the implementation of the member functions in
  * the header file.
  */
 template <class T>
 class XIARIDPatricia {
 
 	public:
+
+	/*
+	 * ****************************************
+	 * ENUMs & STUFF
+	 * ****************************************
+	 */
+
+	enum CREATION_MODE {
+		DEFAULT_NODE = 0x00,
+		ROOT_NODE = 0x01
+	};
 
 	/*
 	 * ****************************************
@@ -63,8 +74,36 @@ class XIARIDPatricia {
 
 	/**
 	 * \brief	alternative constructor for an RID PT node
+	 * 
+	 * accepts a mode arg : if set to ROOT_NODE, it points left and right 
+	 * pointers to the node being created. this should be used for the root 
+	 * nodes in a new PT (e.g. used in XTRANSPORT::Xbind()).
+	 * 
+	 * \arg mode 	PT node creation mode: if set to ROOT_NODE, it points the 
+	 * 				left and right pointers to the node being created.
+	 */
+	XIARIDPatricia(XIARIDPatricia<T>::CREATION_MODE mode) {
+
+		memset(&(this->rid), 0, sizeof(this->rid));
+		this->key_bit = DEFAULT_KEY_BIT;
+		this->data = NULL;
+
+		if (mode == XIARIDPatricia<T>::ROOT_NODE) {
+
+			this->left = this->right = this;
+
+		} else {
+
+			this->left = this->right = NULL;
+		}
+	}
+
+	/**
+	 * \brief	alternative constructor for an RID PT node
+	 * 
+	 * accepts the <RID, data> pair to be associated with the PT node.
 	 *
-	 * \arg	rid			the RID of the new RID PT node
+	 * \arg	rid			the RID of the new PT node
 	 * \arg	data 		pointer to node's data
 	 */
 	XIARIDPatricia(
@@ -93,15 +132,29 @@ class XIARIDPatricia {
 	 * *********************************************************
 	 */
 
-	XIARIDPatricia<T> * insert(const XID & rid, T * data);
+	// node insertion
+	XIARIDPatricia<T> * insert(
+			const XID & rid, 
+			T * data);
+
+	// node removal
 	int remove(const XID & rid);
+
+	// rid lookup : finds *ALL* nodes in a PT which match the rid being looked 
+	// up
 	int lookup(
 			const XID & rid,
 			int prev_key_bit,
 			void (*callback)(void * obj_ptr, T * data),
 			void * obj_ptr);
+
+	// rid search : checks if rid exists in a PT
 	XIARIDPatricia<T> * search(const XID & rid);
+
+	// node count
 	int count();
+
+	// print the PT
 	String print(
 			uint8_t mode,
 			unsigned int data_str_size,
@@ -206,8 +259,15 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::insert(
 	//		3.2) finding a leaf node - pointing 'up' the PT - after which the
 	//			new node will be inserted
 
-	XIARIDPatricia<T> * closest = NULL;
+	// find the closest matching leaf node. note that we're using the calling 
+	// node (i.e. 'this') as a starting point for insertion.
+	XIARIDPatricia<T> * closest = this;
 	int i = 0;
+
+	click_chatter("XIARIDPatricia::insert() : inserting new node (rid = %s) at PT node w/ <%s, %d>\n", 
+		rid.unparse().c_str(), 
+		closest->rid.unparse().c_str(), 
+		closest->key_bit);
 
 	do {
 
@@ -216,6 +276,8 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::insert(
 		closest = (_is_bit_set(closest->key_bit, rid) ? closest->right : closest->left);
 
 	} while (i < closest->key_bit);
+
+	click_chatter("XIARIDPatricia::insert() : off do while() cyle\n");
 
 	// if such a node already exists, return NULL
 	if (closest->rid == rid)
@@ -230,6 +292,8 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::insert(
 			i < ((8 * CLICK_XIA_XID_ID_LEN) - 1)
 					&& (_is_bit_set(i, rid) == _is_bit_set(i, closest->rid));
 			i++);
+
+	click_chatter("XIARIDPatricia::insert() : first bit that differs : %d\n", i);
 
 	// recursive step: this is where the actual insertion happens. we start
 	// inserting the node down the sub-PT, starting on the 'root' of the sub-PT
@@ -634,21 +698,41 @@ String XIARIDPatricia<T>::print(
 
 /**
  * \brief	returns whether or not the i-th bit is set in an RID (i between 0
- * 			and 159, starting from the most significant bit).
+ * 			and 159, starting from the leftmost bit).
  */
 template<class T>
 uint8_t XIARIDPatricia<T>::_is_bit_set(int i, const XID & rid) {
 
-	// (CLICK_XIA_XID_ID_LEN - (i / 8) - 1) gives the index of the byte in
-	// the RID where the i-th bit should be located (from 0 to
-	// (CLICK_XIA_XID_ID_LEN - 1))
+	// let's look at the logic from the return expression in parts:
 
-	// (1 << (8 - (i % 8) - 1)) moves the '1' to the appropriate position
-	// within a byte, e.g.:
-	//	-# for i = 3, this takes 0x01 and moves the '1' 4 positions to the
-	//		left, up to index 3
-	//	-# for i = 13, this takes 0x01, moves the '1' 2 positions to the left,
-	//		up to index 5
+	// A) [CLICK_XIA_XID_ID_LEN - (i / 8) - 1]
+	// B) (1 << (8 - (i % 8) - 1)
+
+	// A) [CLICK_XIA_XID_ID_LEN - (i / 8) - 1]: find the byte in
+	// 		the RID where the i-th bit should be located (from 0 to
+	// 		(CLICK_XIA_XID_ID_LEN - 1)). 
+	//		
+	//		indexes are counted left to right, i.e. the first bit (i = 0) is 
+	//		at rid[CLICK_XIA_XID_ID_LEN - 1], the last bit 
+	//		(i = CLICK_XIA_XID_ID_LEN * 8 - 1) is at rid[0]
+
+	// B) (1 << (8 - (i % 8) - 1)): left-shifts a '1' in a 0x01 byte by 
+	//		(8 - (i % 8) -1) positions. the idea is to generate a bitmask which 
+	//		isolates the i-th bit in the rid byte found in step A. 
+	//		
+	//	e.g. say that i = 13. in step A we find that the 13-th bit is in 
+	//	rid[18]. in step B we create a 1-byte bitmask equal to 0x04, since 
+	//	the 13-th bit is also the bit at index 2 in the rid[18] byte.
+	//
+	//	we finally AND (&) the results of steps A and B	to find out if the 
+	//	13-th bit is set (or not).
+
+	click_chatter("XIARIDPatricia::_is_bit_set() : checking bit at position %d (%d), i.e. (rid[%d] AND %02X) = %02X\n", 
+		i,
+		CLICK_XIA_XID_ID_LEN - (i / 8) - 1,
+		(1 << (8 - (i % 8) - 1)),
+		rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (8 - (i % 8) - 1)));
+
 	return rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (8 - (i % 8) - 1));
 }
 
