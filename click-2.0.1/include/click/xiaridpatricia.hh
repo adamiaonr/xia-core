@@ -277,8 +277,6 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::insert(
 
 	} while (i < closest->key_bit);
 
-	click_chatter("XIARIDPatricia::insert() : off do while() cyle\n");
-
 	// if such a node already exists, return NULL
 	if (closest->rid == rid)
 		return NULL;
@@ -667,6 +665,8 @@ String XIARIDPatricia<T>::print(
 		unsigned int data_str_size,
 		String (*print_data)(T * data)) {
 
+	click_chatter("XIARIDPatricia<T>::print() : [ENTER] printing PATRICIA trie w/ HW = %d\n", rid_calc_weight(this->rid));
+
 	// XXX: calculate total size (in byte) to be occupied by the output string
 
 	// size of a node entry line, which includes:
@@ -683,6 +683,8 @@ String XIARIDPatricia<T>::print(
 
 	// XXX: initiate the recursive printing call
 	_print_recursive(&pt_str, node_str_size, this, mode, print_data);
+
+	click_chatter("XIARIDPatricia<T>::print() : PATRICIA trie :\n%s\n", pt_str);
 
 	String s = String(pt_str);
 	free(pt_str);
@@ -822,8 +824,8 @@ bool XIARIDPatricia<T>::_is_leaf(XIARIDPatricia<T> * node) {
 }
 
 /**
- * \brief	recursively counts nr. of nodes in an RID sub-PT rooted at
- * 			node
+ * \brief	counts nr. of nodes in an RID sub-PT rooted at node
+ * 			
  *
  * \arg		node			the node at which the sub-PT to be counted
  * 							is rooted
@@ -868,9 +870,11 @@ void XIARIDPatricia<T>::_print_recursive(
 	// for a router...
 	char * node_str = (char *) calloc(node_str_size, sizeof(char));
 	char * prefix_bytes = (char *) calloc(XIA_MAX_RID_STR, sizeof(char));
-
+	
 	// 1) print the fwd entry info on node_str, with the following format
 	//	[<RID_PREFIX> (<KEY_BIT>)], <DATA>
+
+
 
 	// XXX: some details
 	//	1) RID_PREFIX consists in (node->key_bit + 1) leftmost bits of the RID
@@ -878,7 +882,7 @@ void XIARIDPatricia<T>::_print_recursive(
 	sprintf(node_str, "[%s (%d)], %s\n",
 			rid_extract_prefix_bytes(&prefix_bytes, node->rid, node->key_bit + 1),
 			node->key_bit,
-			print_data(node->data).c_str());
+			((*print_data) (node->data)).c_str());
 
 	// 2) append the node_str to the given PT global str
 	strncat(*pt_str, node_str, node_str_size);
