@@ -35,7 +35,7 @@ RIDAPIDIR=\$(APIDIR)/rid
 CC=g++
 LD=g++
 CFLAGS=-Wall -Wextra -I\$(XINC) -I\$(XCACHEINC) -L\$(XLIB) -L\$(XCACHEAPIDIR) -L\$(RIDAPIDIR)/bin
-ENV_LD_LIBRARY_PATH+=\$(XLIB):\$(XCACHEAPIDIR)
+ENV_LD_LIBRARY_PATH+=\$(XLIB):\$(XCACHEAPIDIR):\$(RIDAPIDIR)/bin/librid.so
 ENV_LDFLAGS=-lpthread -lprotobuf
 ifeq (\$(wildcard \$(XLIB)/libXsocket.a),)
 	LIBS=\$(XLIB)/libXsocket.so \$(XLIB)/libdagaddr.so \$(XLIB)/libXssl.so
