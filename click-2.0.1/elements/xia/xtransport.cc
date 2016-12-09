@@ -10,7 +10,6 @@
 #include <click/xiacontentheader.hh>
 #include "xtransport.hh"
 #include <click/xiatransportheader.hh>
-#include "xlog.hh"
 
 /*
 ** FIXME:
@@ -40,6 +39,8 @@ int XTRANSPORT::configure(Vector<String> &conf, ErrorHandler *errh)
 	XIAPath local_addr;
 	XID local_4id;
 	Element* routing_table_elem;
+	// @RID: rid routing table
+	Element * rid_routing_table_elem;
 	bool is_dual_stack_router;
 	_is_dual_stack_router = false;
     char xidString[50];
@@ -48,6 +49,8 @@ int XTRANSPORT::configure(Vector<String> &conf, ErrorHandler *errh)
 					 "LOCAL_ADDR", cpkP + cpkM, cpXIAPath, &local_addr,
 					 "LOCAL_4ID", cpkP + cpkM, cpXID, &local_4id,
 					 "ROUTETABLENAME", cpkP + cpkM, cpElement, &routing_table_elem,
+					 // @RID: filename for rid routing table
+					 "RID_ROUTETABLENAME", cpkP + cpkM, cpElement, &rid_routing_table_elem,
 					 "IS_DUAL_STACK_ROUTER", 0, cpBool, &is_dual_stack_router,
 					 cpEnd) < 0)
 		return -1;
@@ -68,8 +71,10 @@ int XTRANSPORT::configure(Vector<String> &conf, ErrorHandler *errh)
 
 #if USERLEVEL
 	_routeTable = dynamic_cast<XIAXIDRouteTable*>(routing_table_elem);
+	_rid_route_table = dynamic_cast<XIARIDRouteTable*>(rid_routing_table_elem);
 #else
 	_routeTable = reinterpret_cast<XIAXIDRouteTable*>(routing_table_elem);
+	_rid_route_table = reinterpret_cast<XIARIDRouteTable*>(rid_routing_table_elem);
 #endif
 
 	return 0;
@@ -2857,12 +2862,16 @@ void XTRANSPORT::Xbind(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 			}
 
 			// 3) insert the RID in the RIDtoSock[hw] : the RID PT insert()
-			// operation already includes a duplicate RID check
-			if (!(RIDtoSock[hw]->insert(source_xid, sk))) {
+			// operation already checks for duplicate RIDs
+			XIARIDPatricia<sock> * new_entry = RIDtoSock[hw]->insert(source_xid, sk);
+			if (new_entry == NULL) {
 
 				ERROR("duplicate RID on RIDtoSock map: ",
 						source_xid.unparse().c_str());
 			}
+
+			WARN("added RID to RIDtoSock map: <%s, %d>", 
+				new_entry->get_rid().unparse().c_str(), (new_entry->get_data())->port);
 
 			// 4) add entry to RID routing table
 			addRIDRoute(source_xid);

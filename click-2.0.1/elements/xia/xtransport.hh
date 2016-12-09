@@ -23,6 +23,7 @@
 #include <click/xiaridpatricia.hh>
 #include <click/xiaridutil.hh>
 #include "xiaridroutetable.hh"
+#include "xlog.hh"	
 
 #if CLICK_USERLEVEL
 #include <list>
@@ -255,7 +256,10 @@ private:
 	} ;
 
 protected:
+
 	XIAXIDRouteTable *_routeTable;
+	// @RID: special routing table for RIDs (RID routing tables work 
+	// differently)
 	XIARIDRouteTable * _rid_route_table;
 
 	// list of ports wanting xcmp notifications
@@ -407,6 +411,7 @@ protected:
 	void addRIDRoute(const XID &rid) {
 		String cmd = rid.unparse() + " " + String(DESTINED_FOR_LOCALHOST);
 		HandlerCall::call_write(_rid_route_table, "add", cmd);
+		click_chatter("XTRANSPORT::addRIDRoute() : route list:\n %s\n", HandlerCall::call_read(_rid_route_table, "list").c_str());
 	}
 
 	void delRIDRoute(const XID &rid) {
