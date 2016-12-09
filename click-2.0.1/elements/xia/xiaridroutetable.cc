@@ -119,9 +119,29 @@ XIARIDRouteTable::write_handler(const String &str, Element *e, void *thunk, Erro
  */
 String XIARIDRouteTable::print_data(XIARIDRouteTable::XIARouteData * route_data) {
 
-	String entry = String(route_data->get_port())
-			+ "," + (route_data->get_next_hop() != NULL ? route_data->get_next_hop()->unparse() : "")
+	click_chatter("XIARIDRouteTable::print_data() : [ENTER]\n");
+
+	String entry;
+
+	if (route_data == NULL) {
+
+		click_chatter("XIARIDRouteTable::print_data() : NULL route\n");
+		entry = String("N/A");
+
+	} else {
+
+		click_chatter("XIARIDRouteTable::print_data() : RID route params :"\
+			"\n\t[PORT] : %d"\
+			"\n\t[NEXT HOP] : %s"\
+			"\n\t[FLAGS] : %d\n", 
+			route_data->get_port(), 
+			(route_data->get_next_hop() != NULL ? route_data->get_next_hop()->unparse().c_str() : "N/A"),
+			route_data->get_flags());
+
+		entry = String(route_data->get_port())
+			+ "," + (route_data->get_next_hop() != NULL ? route_data->get_next_hop()->unparse() : "N/A")
 			+ "," + String(route_data->get_flags());
+	}
 
 	return entry;
 }
@@ -133,16 +153,21 @@ String XIARIDRouteTable::list_routes_handler(
 	XIARIDRouteTable * table = static_cast<XIARIDRouteTable*>(e);
 	XIARouteData * xrd = new XIARouteData(table->_rid_default_route);
 
+	click_chatter("XIARIDRouteTable::list_routes_handler() : [ENTER] listing RID routes\n");
+
 	// get the default route
-	String tbl = "-," + print_data(xrd) + "\n";
+	// String tbl = "-," + print_data(xrd) + "\n";
+	// click_chatter("XIARIDRouteTable::list_routes_handler() : default route : %s\n", tbl.c_str());
+	String tbl = "";
 
 	// get the rest
 	HashTable<unsigned, XIARIDPatricia<XIARouteData> *>::iterator it =
 			table->_rid_fwrdng_tbl.begin();
 
 	char * header = (char *) calloc(1024, sizeof(char));
-
 	while (it != table->_rid_fwrdng_tbl.end()) {
+		
+		click_chatter("XIARIDRouteTable::list_routes_handler() : PATRICIA trie w/ HW = %d\n", it.key());
 
 		sprintf(header,
 				"--------------------------------------------------------------------------\n"\
@@ -154,6 +179,8 @@ String XIARIDRouteTable::list_routes_handler(
 
 		tbl += header;
 		tbl += it.value()->print(PRE_ORDER, FWD_ENTRY_STR_MAX_SIZE, XIARIDRouteTable::print_data);
+		// clear header
+		memset(header, '\0', 1024);
 
 		it++;
 	}
@@ -168,7 +195,6 @@ int XIARIDRouteTable::set_handler(
 		ErrorHandler * errh) {
 
 	// handle older style route entries
-
 	String str_copy = conf;
 	String xid_str = cp_shift_spacevec(str_copy);
 
@@ -205,17 +231,20 @@ int XIARIDRouteTable::set_handler4(
 
 	cp_argvec(conf, args);
 
-	if (args.size() < 2 || args.size() > 4)
+	if (args.size() < 2 || args.size() > 4) {
 		return errh->error("invalid route: ", conf.c_str());
+	}
 
 	xid_str = args[0];
 
-	if (!cp_integer(args[1], &port))
+	if (!cp_integer(args[1], &port)) {
 		return errh->error("invalid port: ", conf.c_str());
+	}
 
 	if (args.size() == 4) {
-		if (!cp_integer(args[3], &flags))
+		if (!cp_integer(args[3], &flags)) {
 			return errh->error("invalid flags: ", conf.c_str());
+		}
 	}
 
 	if (args.size() >= 3 && args[2].length() > 0) {
@@ -232,8 +261,9 @@ int XIARIDRouteTable::set_handler4(
 	// XXX: set the default route
 	if (xid_str == "-") {
 
-		if (add_mode && table->_rid_default_route.get_port() != -1)
+		if (add_mode && table->_rid_default_route.get_port() != -1) {
 			return errh->error("duplicate default route: ", xid_str.c_str());
+		}
 
 		table->_rid_default_route.set_params(port, flags, nexthop);
 
@@ -251,13 +281,14 @@ int XIARIDRouteTable::set_handler4(
 
 		// 2) find the Hamming Weight (HW) of the RID
 		int hw = rid_calc_weight(rid);
+		click_chatter("XIARIDRouteTable::set_handler4() : adding RID entry (%s) to PT[%d]\n", args[0].c_str(), hw);
 
 		// 3) is _rid_fwrdng_tbl[hw] empty?
 		if (!(table->_rid_fwrdng_tbl[hw])) {
 
 			// 3.1) if yes, create an new RID PATRICIA Trie (PT) root entry
 			XIARIDPatricia<XIARouteData> * root =
-					new XIARIDPatricia<XIARouteData>();
+					new XIARIDPatricia<XIARouteData>(XIARIDPatricia<XIARouteData>::ROOT_NODE);
 
 			// 3.2) ... and add it to _rid_fwrdng_tbl[hw]
 			table->_rid_fwrdng_tbl[hw] = root;
@@ -273,7 +304,6 @@ int XIARIDRouteTable::set_handler4(
 				delete nexthop;
 
 			delete xrd;
-
 			return errh->error("duplicate XID: ", xid_str.c_str());
 		}
 	}
