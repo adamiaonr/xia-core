@@ -595,6 +595,8 @@ void XIARIDRouteTable::forward(
 		int in_ether_port,
 		Packet * p) {
 
+	click_chatter("XIARIDRouteTable::forward() : [ENTER] forward over port %d", port);
+
 	// need to inform XCMP that this is a redirect
 	if(port == in_ether_port
 			&& in_ether_port != DESTINED_FOR_LOCALHOST
@@ -655,6 +657,8 @@ void XIARIDRouteTable::handle_unicast_packet(
 		void * obj_ptr,
 		XIARIDRouteTable::XIARouteData * data) {
 
+	click_chatter("XIARIDRouteTable::handle_unicast_packet : [ENTER]\n");
+
 	XIARIDRouteTable * ridtbl_obj_ptr = (XIARIDRouteTable *) obj_ptr;
 
 	if(data->get_port() != DESTINED_FOR_LOCALHOST
@@ -668,6 +672,8 @@ void XIARIDRouteTable::handle_unicast_packet(
 			data->get_port(),
 			ridtbl_obj_ptr->_curr_in_ether_port,
 			ridtbl_obj_ptr->_curr_p);
+
+	click_chatter("XIARIDRouteTable::handle_unicast_packet : [EXIT]\n");
 }
 
 /**
@@ -712,6 +718,8 @@ int XIARIDRouteTable::process_xcmp_redirect(Packet * p) {
  *
  */
 void XIARIDRouteTable::lookup_route(int in_ether_port, Packet * p) {
+
+	click_chatter("XIARIDRouteTable::lookup_route() : [ENTER] time for the router to... uh... 'find a way!'\n");
 
 	const struct click_xia * hdr = p->xia_header();
 	int last = hdr->last;
@@ -807,32 +815,51 @@ void XIARIDRouteTable::lookup_route(int in_ether_port, Packet * p) {
 
 	} else {
 
-		// XXX: UNICAST packet (w/ RID-like forwarding)
+		// XXX: UNICAST packet (w/ RID forwarding)
 
-		// 1) call RID PT's lookup() which takes care of everything for you
+		// starting at the hamming weight of the RID request (say HW), we 
+		// lookup the RID in the PATRICIA tries w/ hw = {HW, HW - 1, ..., 1}
 
-		// 1.1) extract the RID
+		// extract the RID in the request
 		XID rid = XID(node.xid);
-
-		// 1.2) find out the RID's HW
+		// find out the RID's hw
 		int hw = rid_calc_weight(rid);
+		// keep track of the total number of matches
+		int num_matches = 0;
 
-		// 1.3) load the local _curr_p and _curr_in_ether_port 'registers' with
+		// load the local _curr_p and _curr_in_ether_port 'registers' with
 		// the info of the packet being currently handled...
 		// FIXME: temporary fix <- is ugly
 		_curr_p = p;
 		_curr_in_ether_port = in_ether_port;
 
-		// 1.5) let XIARIDPatricia::lookup() do the work...
+		// let XIARIDPatricia::lookup() do the work...
 		// ... with the help of the handle_unicast_packet() as callback
-		if( ! (_rid_fwrdng_tbl[hw]->lookup(
-				rid,
-				-1,
-				XIARIDRouteTable::handle_unicast_packet,
-				(void *) this))) {
+		for (; hw > 0; hw--) {
 
-			// no match -- use default route
-			// check if outgoing packet
+			if (!_rid_fwrdng_tbl[hw]) {
+
+				click_chatter("XIARIDRouteTable::lookup_route() : no PATRICIA trie for hw = %d. skipping...\n", hw);
+
+			} else {
+
+				// run the PATRICIA trie lookup for hw
+				click_chatter("XIARIDRouteTable::lookup_route() : initializing PATRICIA lookup for hw = %d \n", hw);
+				num_matches += _rid_fwrdng_tbl[hw]->lookup(
+					rid,
+					-1,
+					XIARIDRouteTable::handle_unicast_packet,
+					(void *) this);
+			}
+		}
+
+		click_chatter("XIARIDRouteTable::lookup_route() : lookup is finished!\n");
+
+		// if no matches, use default route
+		if (num_matches == 0) {
+
+			click_chatter("XIARIDRouteTable::lookup_route() : no matches (%d). using default route...\n", num_matches);
+
 			if(_rid_default_route.get_port() != DESTINED_FOR_LOCALHOST
 					&& _rid_default_route.get_port() != FALLBACK
 					&& _rid_default_route.get_next_hop() != NULL) {

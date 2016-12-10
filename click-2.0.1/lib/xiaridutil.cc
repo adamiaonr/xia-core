@@ -48,6 +48,8 @@ bool rid_match(const XID & req, const XID & fwd) {
  */
 bool rid_match_mask(const XID & req, const XID & fwd, uint8_t mask_bit_size) {
 
+	click_chatter("xiaridutil::rid_match_mask() : [ENTER]\n");
+
 	// no mask sizes of size 0 or larger than (CLICK_XIA_XID_ID_LEN * 8)
 	if (!(mask_bit_size) || mask_bit_size > (CLICK_XIA_XID_ID_LEN * 8))
 		return false;
@@ -64,7 +66,7 @@ bool rid_match_mask(const XID & req, const XID & fwd, uint8_t mask_bit_size) {
 	uint8_t f_endmask_block = (fwd.xid().id[endmask_block_pos] & endmask_block);
 
 	if ((r_endmask_block & f_endmask_block) != f_endmask_block) {
-
+		click_chatter("xiaridutil::rid_match_mask() : [EXIT]\n");
 		return false;
 	}
 
@@ -72,9 +74,12 @@ bool rid_match_mask(const XID & req, const XID & fwd, uint8_t mask_bit_size) {
 
 		if ((req.xid().id[j] & fwd.xid().id[j]) != fwd.xid().id[j]) {
 
+			click_chatter("xiaridutil::rid_match_mask() : [EXIT]\n");
 			return false;
 		}
 	}
+
+	click_chatter("xiaridutil::rid_match_mask() : [EXIT]\n");
 
 	return true;
 }

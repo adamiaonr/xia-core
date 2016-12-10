@@ -530,14 +530,19 @@ int XIARIDPatricia<T>::lookup(
 		void (*callback)(void * obj_ptr, T * data),
 		void * obj_ptr) {
 
+	click_chatter("XIARIDPatricia<T>::lookup()) : [ENTER] (%d vs. %d)\n", this->key_bit, prev_key_bit);
+
 	int pos_matches = 0;
 
 	// stop the lookup if the value to the key bit decreases: this means
 	// we're going up the trie
 	if (this->key_bit <= prev_key_bit) {
 
+		click_chatter("XIARIDPatricia<T>::lookup()) : [RETURN] 0\n");
 		return pos_matches;
 	}
+
+	click_chatter("XIARIDPatricia<T>::lookup()) : matching...\n");
 
 	// XXX: when looking up an RID PT (accounting for FPs), we always
 	// follow the left branch of the PT, and selectively follow the
@@ -561,15 +566,22 @@ int XIARIDPatricia<T>::lookup(
 	// F->key_bit), then we can bypass the right sub-PT.
 	if (rid_match_mask(rid, this->rid, this->key_bit)) {
 
+		click_chatter("XIARIDPatricia<T>::lookup()) : %s partially matches w/ %s (mask %d)\n",
+			rid.unparse().c_str(), this->rid.unparse().c_str(), this->key_bit);
+
 		// FIXME: avoid matches with the default route (or root
 		// node) by checking node->key_bit > 0.
 		if (rid_match(rid, this->rid) && (this->key_bit > 0)) {
+
+			click_chatter("XIARIDPatricia<T>::lookup()) : %s matches w/ %s (mask %d)\n",
+				rid.unparse().c_str(), this->rid.unparse().c_str(), this->key_bit);
 
 			// XXX: a positive match (either TP or FP) has been found: call
 			// the callback function on the node's data
 			pos_matches++;
 
-			callback(obj_ptr, this->data);
+			click_chatter("XIARIDPatricia<T>::lookup()) : it's callback time!\n");
+			(*callback)(obj_ptr, this->data);
 		}
 
 		// keep looking up down the right sub-PT
@@ -579,6 +591,7 @@ int XIARIDPatricia<T>::lookup(
 	// regardless of matches, allways follow the left sub-PT
 	pos_matches += this->left->lookup(rid, this->key_bit, callback, obj_ptr);
 
+	click_chatter("XIARIDPatricia<T>::lookup()) : [RETURN] 1\n");
 	return pos_matches;
 }
 

@@ -3953,13 +3953,14 @@ void XTRANSPORT::Xsend(unsigned short _sport, xia::XSocketMsg *xia_socket_msg, W
 	ReturnResult(_sport, xia_socket_msg, rc, ec);
 }
 
-
-
-void XTRANSPORT::Xsendto(unsigned short _sport, xia::XSocketMsg *xia_socket_msg, WritablePacket *p_in)
+void XTRANSPORT::Xsendto(
+	unsigned short _sport, 
+	xia::XSocketMsg * xia_socket_msg, 
+	WritablePacket * p_in)
 {
 	int rc = 0, ec = 0;
 
-	xia::X_Sendto_Msg *x_sendto_msg = xia_socket_msg->mutable_x_sendto();
+	xia::X_Sendto_Msg * x_sendto_msg = xia_socket_msg->mutable_x_sendto();
 
 	String dest(x_sendto_msg->ddag().c_str());
 	int pktPayloadSize = x_sendto_msg->payload().size();
@@ -3968,7 +3969,7 @@ void XTRANSPORT::Xsendto(unsigned short _sport, xia::XSocketMsg *xia_socket_msg,
 	dst_path.parse(dest);
 
 	//Find DAG info for this DGRAM
-	sock *sk = portToSock.get(_sport);
+	sock * sk = portToSock.get(_sport);
 
 	if(!sk) {
 		//No local SID bound yet, so bind one
@@ -3976,11 +3977,13 @@ void XTRANSPORT::Xsendto(unsigned short _sport, xia::XSocketMsg *xia_socket_msg,
 	}
 
 	if (sk->initialized == false) {
+
 		sk->initialized = true;
 		sk->full_src_dag = true;
 		if(sk->port != _sport) {
 			INFO("sk->port was %d setting to %d", sk->port, _sport);
 		}
+
 		sk->port = _sport;
 		String str_local_addr = _local_addr.unparse_re();
 
@@ -4005,7 +4008,6 @@ void XTRANSPORT::Xsendto(unsigned short _sport, xia::XSocketMsg *xia_socket_msg,
 		str_local_addr = str_local_addr + " " + xid_string; //Make source DAG _local_addr:SID
 		sk->src_path.parse_re(str_local_addr);
 	}
-
 
 	if(sk->src_path.unparse_re().length() != 0) {
 		//Recalculate source path
