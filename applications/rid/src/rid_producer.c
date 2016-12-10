@@ -32,8 +32,8 @@
 #define VERSION "v0.1"
 #define TITLE "XIA RID Producer Application"
 
-// XXX: 0 = 'permanent', i.e. cached objects live forever (just like diamonds)
-#define DEFAULT_CACHE_SLICE_TTL        (unsigned) 0
+// XXX: 0 = 'permanent', i.e. cached objects live forever
+#define DEFAULT_CACHE_SLICE_TTL     (unsigned) 0
 #define DEFAULT_CACHE_SLICE_SIZE    (unsigned) 200000000
 
 char PRODUCER_AID[4 + (XID_SIZE * 2) + 1];

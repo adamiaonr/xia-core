@@ -130,6 +130,9 @@ int main(int argc, char **argv)
     if (name[0] != '\0') {
 
         rid_string = name_to_rid(name);
+        say("[rid_requester]: created RID %s out of name %s\n",
+            rid_string,
+            name);
 
     } else {
 
@@ -138,8 +141,10 @@ int main(int argc, char **argv)
     }
 
     // initialize the requester's xcache handle
-    XcacheHandle * xcache_handle = NULL; 
-    XcacheHandleInit(xcache_handle);
+    say("[rid_requester]: initializing xcache handle...\n");
+    XcacheHandle xcache_handle; 
+    XcacheHandleInit(&xcache_handle);
+    say("[rid_requester]: ... done!\n");
 
     // ************************************************************************
     // 3) open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER
@@ -195,7 +200,7 @@ int main(int argc, char **argv)
 
     // 3.3.1) TODO: what should be set in the payload? send the full name for 
     // now...
-    char * rid_packet_payload; 
+    char rid_packet_payload[RID_MAX_PACKET_SIZE] = {'\0'}; 
     strncpy(rid_packet_payload, name, RID_MAX_PACKET_SIZE);
     rid_packet_len = strlen(rid_packet_payload);
 
@@ -293,7 +298,7 @@ int main(int argc, char **argv)
 
             // 4.4) use XfetchChunk() to get the CID's content
             if (XfetchChunk(
-                            xcache_handle, 
+                            &xcache_handle, 
                             rid_resp, rid_resp_len, 
                             0, 
                             &cid_resp_addr, cid_resp_addr_len) < 0) {
