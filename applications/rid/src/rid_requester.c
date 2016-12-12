@@ -28,8 +28,8 @@
 
 #define RID_REQUEST_DEFAULT_AD     (char *) "1000000000000000000000000000000000000002"
 #define RID_REQUEST_DEFAULT_HID    (char *) "0000000000000000000000000000000000000005"
-
-#define SID_REQUESTER "SID:00000000dd41b924c1001cfa1e1117a812492434"
+#define SID_REQUESTER       "SID:00000000dd41b924c1001cfa1e1117a812492434"
+#define ORIGIN_SERVER_NAME  "www_s.dgram_producer.aaa.xia"
 
 /*
 ** write the message to stdout unless in quiet mode
@@ -69,6 +69,74 @@ void die(int ecode, const char * fmt, ...)
     exit(ecode);
 }
 
+int setup_sid_sock() {
+
+    int x_sock = 0;
+
+    if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
+        die(-1, "[rid_requester]: Xsocket(SOCK_DGRAM) error = %d", errno);
+    }
+
+    // FIXME: will use Xgetaddrinfo(name = NULL, ...) to build
+    // AD:HID:SIDx (= SID_REQUESTER) with local AD:HID
+    struct addrinfo * local_addr_info;
+
+    if (Xgetaddrinfo(
+            NULL, 
+            (const char *) SID_REQUESTER, 
+            NULL, 
+            &local_addr_info) != 0) {
+
+        die(-1, "[rid_requester]: Xgetaddrinfo() error");
+    }
+
+    sockaddr_x * listen_addr = (sockaddr_x *) local_addr_info->ai_addr;
+
+    // bind the socket to the local DAG
+    if (Xbind(
+            x_sock,
+            (struct sockaddr *) listen_addr,
+            sizeof(*listen_addr)) < 0) {
+
+        Xclose(x_sock);
+
+        die(    -1,
+                "[rid_requester]: unable to Xbind() to DAG %s error = %d",
+                Graph(listen_addr).dag_string().c_str(),
+                errno);
+    }
+
+    say("[rid_requester]: will listen to SID packets directed at: \n%s\n\n",
+            Graph(listen_addr).dag_string().c_str());
+
+    return x_sock;
+}
+
+int feth_remote_dag(const char * origin_server_name, Graph & remote_dag) {
+
+    struct addrinfo * remote_address_info;
+    sockaddr_x * remote_socket_address;
+
+    if (Xgetaddrinfo(
+        origin_server_name, 
+        NULL, 
+        NULL, 
+        &remote_address_info) != 0) {
+
+        say("[rid_requester] unable to lookup name %s\n", origin_server_name);
+
+        return -1;
+    }
+
+    remote_socket_address = (sockaddr_x *) remote_address_info->ai_addr;
+
+    remote_dag = Graph(remote_socket_address);
+    say("[rid_requester] remote DAG for name %s is:\n%s\n\n", 
+        origin_server_name, remote_dag.dag_string().c_str());
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     // file descriptors for 'SOCK_DGRAM' Xsocket:
@@ -81,11 +149,9 @@ int main(int argc, char **argv)
     // similarly to other XIA example apps, print some initial info on the app
     say("\n%s (%s): started\n", TITLE, VERSION);
 
-    // ************************************************************************
     // 1) gather the application arguments
-    // ************************************************************************
 
-    // 1.1) if not enough arguments, stop immediately...
+    // if not enough arguments, stop immediately...
     if (argc < 3) {
         die(-1, "usage: rid_requester -n <URL-like name>\n");
     }
@@ -103,7 +169,7 @@ int main(int argc, char **argv)
                 break;
 
             switch (*av[0]) {
-                // 1.2) single URL-like name given as parameter to generate
+                // single URL-like name given as parameter to generate
                 // RIDs (e.g. uof/cs/r9x/r9001/)
                 case 'n':
                     // 1.1.1) shift to the argument value, save the url-like
@@ -112,7 +178,7 @@ int main(int argc, char **argv)
                     strncpy(name, av[0], strlen(av[0]));
                     break;
 
-                // 1.3) file with list of URL-like names to generate RIDs for
+                // file with list of URL-like names to generate RIDs for
                 // request
                 // case 'f':
                 //     argc--, av++;
@@ -124,9 +190,7 @@ int main(int argc, char **argv)
         argc--, av++;
     }
 
-    // ************************************************************************
     // 2) create RID out of the provided name
-    // ************************************************************************
     if (name[0] != '\0') {
 
         rid_string = name_to_rid(name);
@@ -136,65 +200,49 @@ int main(int argc, char **argv)
 
     } else {
 
-        // 2.1) if no name has been specified, no point going on...
+        // if no name has been specified, no point going on...
         die(-1, "[rid_requester]: name string is empty\n");
     }
 
-    // initialize the requester's xcache handle
+    // 3) initialize the requester's xcache handle
     say("[rid_requester]: initializing xcache handle...\n");
     XcacheHandle xcache_handle; 
     XcacheHandleInit(&xcache_handle);
     say("[rid_requester]: ... done!\n");
 
-    // ************************************************************************
-    // 3) open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER
-    // ************************************************************************
-    if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
-        die(-1, "[rid_requester]: Xsocket(SOCK_DGRAM) error = %d", errno);
-    }
+    // 4) open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER, on 
+    // which it will listen for RID responses
+    x_sock = setup_sid_sock();
 
-    // 3.1) bind the requester to a particular SID_REQUESTER, on which it will
-    // listen for RID responses
-
-    // FIXME: will use Xgetaddrinfo(name = NULL, ...) to build
-    // AD:HID:SIDx (= SID_REQUESTER) with local AD:HID
-    struct addrinfo * local_addr_info;
-
-    if (Xgetaddrinfo(
-            NULL, 
-            (const char *) SID_REQUESTER, 
-            NULL, 
-            &local_addr_info) != 0) {
-
-        die(-1, "[rid_requester]: Xgetaddrinfo() error");
-    }
-
-    sockaddr_x * listen_addr = (sockaddr_x *) local_addr_info->ai_addr;
-
-    // 3.2) Xbind() x_sock to listen_addr
-    if (Xbind(
-            x_sock,
-            (struct sockaddr *) listen_addr,
-            sizeof(*listen_addr)) < 0) {
-
-        Xclose(x_sock);
-
-        die(    -1,
-                "[rid_requester]: unable to Xbind() to DAG %s error = %d",
-                Graph(listen_addr).dag_string().c_str(),
-                errno);
-    }
-
-    // 3.3) send the RID request
+    // 5) send the RID request
     int rid_packet_len = 0;
-
     sockaddr_x rid_dest_addr;
     socklen_t rid_dest_addr_len;
 
+    // get the AD and HID of origin server
+    Graph remote_dag;
+    char remote_ad[(XID_SIZE * 2) + 1]     = {'\0'};
+    char remote_hid[(XID_SIZE * 2) + 1]    = {'\0'};
+
+    if (feth_remote_dag(ORIGIN_SERVER_NAME, remote_dag) < 0) {
+
+        strncpy(remote_ad, RID_REQUEST_DEFAULT_AD, sizeof(remote_ad));
+        strncpy(remote_hid, RID_REQUEST_DEFAULT_HID, sizeof(remote_hid));
+
+    } else {
+
+        // say("[rid_requester] AD for name %s is: %s\n", 
+        //     ORIGIN_SERVER_NAME, remote_dag.get_node(0).to_string().c_str());
+        // say("[rid_requester] HID for name %s is: %s\n", 
+        //     ORIGIN_SERVER_NAME, remote_dag.get_node(1).to_string().c_str());
+        strncpy(remote_ad, &(remote_dag.get_node(0).to_string().c_str()[3]), sizeof(remote_ad));
+        strncpy(remote_hid, &(remote_dag.get_node(1).to_string().c_str()[4]), sizeof(remote_hid));
+    }
+
     to_rid_addr(
         rid_string, 
-        RID_REQUEST_DEFAULT_AD,
-        RID_REQUEST_DEFAULT_HID,
+        remote_ad,
+        remote_hid,
         &rid_dest_addr,
         &rid_dest_addr_len);
 
@@ -238,12 +286,7 @@ int main(int argc, char **argv)
         fflush(stdout);
     }
 
-    // ************************************************************************
     // 4) listen to responses to the RID request 
-    // ************************************************************************
-
-    say("[rid_requester]: will listen to SID packets directed at: %s\n",
-            Graph(listen_addr).dag_string().c_str());
 
     // 4.4) start listening to RID responses
     // FIXME: ... for now, in an endless loop. this is likely to change in the
@@ -291,7 +334,7 @@ int main(int argc, char **argv)
             sockaddr_x cid_resp_addr;
             socklen_t cid_resp_addr_len;
 
-            to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
+            // to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
 
             // cleanup rid_resp just in case...
             memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
