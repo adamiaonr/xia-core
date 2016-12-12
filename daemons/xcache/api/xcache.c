@@ -450,6 +450,12 @@ int XpushChunkto(
 	// FIXME: we pass cid in string form, since XputChunk does not return 
 	// cid_addr_len
 	cmd.set_cid(Graph((sockaddr_x *) cid_info).dag_string().c_str());
+
+	// fprintf(stderr, 
+	// 	"%s: dst_addr DAG : \n%s\ndst_addr_len : %d\n", 
+	// 	__func__,
+	// 	Graph(dst_addr).dag_string().c_str(), dst_addr_len);
+
 	cmd.set_dag(dst_addr, dst_addr_len);
 	cmd.set_data(data, data_len);
 	cmd.set_flags(XCF_DATACHUNK);

@@ -342,6 +342,9 @@ int xcache_controller::fast_process_req(int fd, xcache_cmd *resp, xcache_cmd *cm
 //		ret = chunk_read(resp, cmd);
 		ret = RET_ENQUEUE;
 		break;
+	case xcache_cmd::XCACHE_PUSH:
+		send_content_to_remote(cmd);
+		break;
 	default:
 		LOG_CTRL_ERROR("Unknown message received\n");
 	}
@@ -532,16 +535,16 @@ int xcache_controller::send_content_to_remote(xcache_cmd * cmd)
 	size_t data_len = cmd->data().length();
 
 	// print everything for debugging purposes...
-	LOG_CTRL_INFO("[CID]: %s\n", cid);
-	LOG_CTRL_INFO("[DST DAG]: %s\n", Graph(&dst_addr).dag_string().c_str());
-	LOG_CTRL_INFO("[DATA]: %s\n", data);
+	LOG_CTRL_INFO("xcache_controller::send_content_to_remote() : [CID] = %s\n", cid);
+	LOG_CTRL_INFO("xcache_controller::send_content_to_remote() : [DST_DAG] = %s\n", Graph(&dst_addr).dag_string().c_str());
+	LOG_CTRL_INFO("xcache_controller::send_content_to_remote() : [DATA] = %s\n", data);
 
 	// create a temp socket to deliver send the CID push
 	int x_sock = 0;
 
 	if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
 
-		LOG_CTRL_ERROR("Xsocket(SOCK_DGRAM) error = %d\n", errno);
+		LOG_CTRL_ERROR("xcache_controller::send_content_to_remote() : Xsocket(SOCK_DGRAM) error = %d\n", errno);
 
 		return -1;
 	}
@@ -579,45 +582,50 @@ int xcache_controller::send_content_to_remote(xcache_cmd * cmd)
 	size_t offset = 0;
 
 	// in this case, we only send one chunk, of size XIA_MAXBUF
-//	while(remaining > 0) {
+	while(remaining > 0) {
 
-	char data_to_push[XIA_MAXBUF];
-	size_t data_to_push_size = MIN(XIA_MAXBUF, remaining);
+		char data_to_push[XIA_MAXBUF];
+		size_t data_to_push_size = MIN(XIA_MAXBUF, remaining);
 
-	// FIXME: we should replace this with an RID header in the future...
-	struct cid_header header;
-	size_t header_size = sizeof(header);
+		// FIXME: we should replace this with an RID header in the future...
+		struct cid_header header;
+		size_t header_size = sizeof(header);
 
-	if(data_to_push_size + header_size > XIA_MAXBUF) {
+		if(data_to_push_size + header_size > XIA_MAXBUF) {
 
-		data_to_push_size -= header_size;
+			data_to_push_size -= header_size;
+		}
+
+		header.offset = offset;
+		header.length = data_to_push_size;
+		header.total_length = data_len;
+		strcpy(header.cid, cid);
+
+		memcpy(data_to_push, &header, header_size);
+		memcpy(data_to_push + header_size, data + offset, data_to_push_size);
+
+		remaining -= data_to_push_size;
+
+		LOG_CTRL_INFO("xcache_controller::send_content_to_remote() : "\
+			"\n\t[DATA TO SEND] = %s"\
+			"\n\t[DATA LENGTH] = %d\n", 
+			data_to_push, data_to_push_size + header_size);
+
+		if(Xsendto(
+			x_sock,
+			data_to_push,
+			data_to_push_size + header_size,
+			0,
+			(struct sockaddr *) &dst_addr,
+			dst_addr_len) < 0) {
+
+			LOG_CTRL_ERROR("Xsendto() error = %d", errno);
+
+			return -1;
+		}
+
+		offset += data_to_push_size;
 	}
-
-	header.offset = offset;
-	header.length = data_to_push_size;
-	header.total_length = data_len;
-	strcpy(header.cid, cid);
-
-	memcpy(data_to_push, &header, header_size);
-	memcpy(data_to_push + header_size, data + offset, data_to_push_size);
-
-	remaining -= data_to_push_size;
-
-	if(Xsendto(
-		x_sock,
-		data_to_push,
-		data_to_push_size + header_size,
-		0,
-		(struct sockaddr *) &dst_addr,
-		dst_addr_len) < 0) {
-
-		LOG_CTRL_ERROR("Xsendto() error = %d", errno);
-
-		return -1;
-	}
-
-	offset += data_to_push_size;
-//	}
 
 	Xclose(x_sock);
 
@@ -739,10 +747,10 @@ void xcache_controller::process_req(xcache_req *req)
 	case xcache_cmd::XCACHE_SENDCHUNK:
 		send_content_remote(req->to_sock, (sockaddr_x *)req->data);
 		break;
-	case xcache_cmd::XCACHE_PUSH:
-		cmd = (xcache_cmd *) req->data;
-		send_content_to_remote(cmd);
-		break;
+	// case xcache_cmd::XCACHE_PUSH:
+	// 	cmd = (xcache_cmd *) req->data;
+	// 	send_content_to_remote(cmd);
+	// 	break;
 	}
 
 	if(req->flags & XCFI_REMOVEFD) {
