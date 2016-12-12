@@ -604,10 +604,23 @@ int XIARIDPatricia<T>::lookup(
 /**
  * \brief	exact-match-like search for a given RID
  *
- * \arg	rid	RID to search for
+ * \arg		rid	RID to search for
  *
  * \result	a pointer to the RID PT node (if found), NULL otherwise.
  */
+
+// RID:000200044008a010864400545705482021400c80
+// RID:0000000440000000044000400004400000000400
+
+// Click: XIARIDPatricia<T>::search() : key_bit = 0
+// Click: XIARIDPatricia::_is_bit_set() : checking bit at position 0 (19), i.e. (rid[128] AND 80) = 1ED5550
+
+// RID:0011010540400001454001404045444041455540
+// RID:0000000440000000044000400004400000000400
+
+// Click: XIARIDPatricia<T>::search() : key_bit = 0
+// Click: XIARIDPatricia::_is_bit_set() : checking bit at position 0 (19), i.e. (rid[128] AND 00) = F9C740
+
 template<class T>
 XIARIDPatricia<T> * XIARIDPatricia<T>::search(const XID & rid) {
 
@@ -628,6 +641,8 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::search(const XID & rid) {
 		// curr->right or curr->left point to the head of the tree, parent
 		// node or itself). this can be done because (by definition) the
 		// `key bit' in the nodes increase as one traverses down the trie.
+		click_chatter("XIARIDPatricia<T>::search() : key_bit = %d\n", curr->key_bit);
+
 		i = curr->key_bit;
 		curr = (_is_bit_set(curr->key_bit, rid) ? curr->right : curr->left);
 
@@ -713,7 +728,7 @@ String XIARIDPatricia<T>::print(
 
 /**
  * \brief	returns whether or not the i-th bit is set in an RID (i between 0
- * 			and 159, starting from the leftmost bit).
+ * 			and 159, starting from the rightmost bit).
  */
 template<class T>
 uint8_t XIARIDPatricia<T>::_is_bit_set(int i, const XID & rid) {
@@ -721,34 +736,35 @@ uint8_t XIARIDPatricia<T>::_is_bit_set(int i, const XID & rid) {
 	// let's look at the logic from the return expression in parts:
 
 	// A) [CLICK_XIA_XID_ID_LEN - (i / 8) - 1]
-	// B) (1 << (8 - (i % 8) - 1)
+	// B) (1 << (i % 8))
 
 	// A) [CLICK_XIA_XID_ID_LEN - (i / 8) - 1]: find the byte in
-	// 		the RID where the i-th bit should be located (from 0 to
-	// 		(CLICK_XIA_XID_ID_LEN - 1)). 
-	//		
-	//		indexes are counted left to right, i.e. the first bit (i = 0) is 
-	//		at rid[CLICK_XIA_XID_ID_LEN - 1], the last bit 
-	//		(i = CLICK_XIA_XID_ID_LEN * 8 - 1) is at rid[0]
-
-	// B) (1 << (8 - (i % 8) - 1)): left-shifts a '1' in a 0x01 byte by 
-	//		(8 - (i % 8) -1) positions. the idea is to generate a bitmask which 
-	//		isolates the i-th bit in the rid byte found in step A. 
-	//		
-	//	e.g. say that i = 13. in step A we find that the 13-th bit is in 
-	//	rid[18]. in step B we create a 1-byte bitmask equal to 0x04, since 
-	//	the 13-th bit is also the bit at index 2 in the rid[18] byte.
+	//    the RID where the i-th bit should be located (from 0 to
+	//    (CLICK_XIA_XID_ID_LEN - 1)). 
 	//
-	//	we finally AND (&) the results of steps A and B	to find out if the 
-	//	13-th bit is set (or not).
+	//    the first bit (i = 0) is at the largest byte index (e.g. bit 0 is  
+	//    at rid[CLICK_XIA_XID_ID_LEN - 1]), the last bit 
+	//    (i = 159) is at rid[0].
+	//
+	// B) (1 << (i % 8)): the position of bit i WITHIN one byte. the idea is 
+	//    to create a bitmask which isolates the i-th bit in the rid byte found 
+	//    in step A. 
+	//
+	// e.g. say that i = 13. in step A we find that the 13-th bit is in 
+	// rid[18]. in step B we create a 1-byte bitmask equal to 0x20, since 
+	// the 13-th bit is also the bit at index 5 in the rid[18] byte.
+	//
+	// we finally AND (&) the results of steps A and B	to find out if the 
+	// 13-th bit is set (or not).
 
-	click_chatter("XIARIDPatricia::_is_bit_set() : checking bit at position %d (%d), i.e. (rid[%d] AND %02X) = %02X\n", 
+	click_chatter("XIARIDPatricia::_is_bit_set() : checking bit at position %d, ((rid[%d] = %02X) AND %02X) = %02X\n", 
 		i,
 		CLICK_XIA_XID_ID_LEN - (i / 8) - 1,
-		(1 << (8 - (i % 8) - 1)),
-		rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (8 - (i % 8) - 1)));
+		rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1],
+		(1 << (i % 8)),
+		rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (i % 8)));
 
-	return rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (8 - (i % 8) - 1));
+	return rid.xid().id[CLICK_XIA_XID_ID_LEN - (i / 8) - 1] & (1 << (i % 8));
 }
 
 /**

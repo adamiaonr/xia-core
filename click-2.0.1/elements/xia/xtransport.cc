@@ -866,6 +866,7 @@ void XTRANSPORT::add_packet_to_recv_buf(WritablePacket *p, sock *sk)
 void XTRANSPORT::check_for_and_handle_pending_recv(sock *sk)
 {
 	if (sk->recv_pending) {
+
 		int bytes_returned = read_from_recv_buf(sk->pending_recv_msg, sk);
 		ReturnResult(sk->port, sk->pending_recv_msg, bytes_returned);
 
@@ -1176,7 +1177,7 @@ void XTRANSPORT::ProcessDatagramPacket(WritablePacket *p_in)
 	XIAPath dst_path = xiah.dst_path();
 	XID _destination_xid(xiah.hdr()->node[xiah.last()].xid);
 
-	sock *sk = XID2Sock(_destination_xid);  // This is to be updated for the XSOCK_STREAM type connections below
+	sock * sk = XID2Sock(_destination_xid);  // This is to be updated for the XSOCK_STREAM type connections below
 
 	if (!sk) {
 		WARN("ProcessDatagramPacket: sk == NULL\n");
@@ -1184,16 +1185,28 @@ void XTRANSPORT::ProcessDatagramPacket(WritablePacket *p_in)
 	}
 	unsigned short _dport = sk->port;
 
+	if (ntohl(_destination_xid.type()) == XidMap::id("RID"))
+		click_chatter("XTRANSPORT::ProcessDatagramPacket() : dport is %d", (int) _dport);
+
 	// buffer packet if this is a DGRAM socket and we have room
 	if (sk->sock_type == SOCK_DGRAM && should_buffer_received_packet(p_in, sk)) {
+
 		add_packet_to_recv_buf(p_in, sk);
 
 		sk->interface_id = SRC_PORT_ANNO(p_in);
 
 		if (sk->polling) {
+
+			if (ntohl(_destination_xid.type()) == XidMap::id("RID"))
+				click_chatter("XTRANSPORT::ProcessDatagramPacket() : JUST POLLIN'");
+
 			// tell API we are readable
 			ProcessPollEvent(_dport, POLLIN);
 		}
+
+		if (ntohl(_destination_xid.type()) == XidMap::id("RID"))
+			click_chatter("XTRANSPORT::ProcessDatagramPacket() : AFTER POLLIN'");
+
 		check_for_and_handle_pending_recv(sk);
 	}
 }
@@ -1723,7 +1736,7 @@ void XTRANSPORT::MigrateFailure(sock *sk)
 	}
 }
 
-XTRANSPORT::sock *XTRANSPORT::XID2Sock(XID dest_xid)
+XTRANSPORT::sock * XTRANSPORT::XID2Sock(XID dest_xid)
 {
 	sock *sk = XIDtoSock.get(dest_xid);
 
@@ -1746,10 +1759,38 @@ XTRANSPORT::sock *XTRANSPORT::XID2Sock(XID dest_xid)
 		// 1) get the hamming weight (nr. of bits set to '1') of dest_xid
 		int hw = rid_calc_weight(dest_xid);
 
-		// 2) the sock structure should be found in the trie of index 'hw'
-		sk = RIDtoSock[hw]->search(dest_xid)->get_data();
+		click_chatter("XTRANSPORT::XID2Sock() : got an RID request %s (hw = %d)", 
+			dest_xid.unparse().c_str(), hw);
 
-		return sk;
+		// 2) the sock structure should be found in the trie of index 'hw'
+		for (; hw > 0; hw--) {
+
+			if (!RIDtoSock[hw]) {
+
+				click_chatter("XTRANSPORT::XID2Sock() : no PATRICIA trie for hw = %d. skipping...\n", hw);
+
+			} else {
+
+				click_chatter("XTRANSPORT::XID2Sock() : initializing PATRICIA lookup for hw = %d \n", hw);
+
+				// search for
+				XIARIDPatricia<sock> * node = RIDtoSock[hw]->search(dest_xid);
+
+				if (node != NULL) {
+
+					click_chatter("XTRANSPORT::XID2Sock() : found match for RID %s : %s (hw = %d) \n", 
+						dest_xid.unparse().c_str(),
+						node->get_rid().unparse().c_str(),
+						hw);
+
+					sk = (XTRANSPORT::sock *) node->get_data();
+					return sk;
+
+				} else {
+					click_chatter("XTRANSPORT::XID2Sock() : didn't find match for hw = %d \n", hw);
+				}
+			}
+		}
 	}
 
 	return NULL;
@@ -2687,8 +2728,6 @@ void XTRANSPORT::ProcessAPIPacket(WritablePacket *p_in)
 	p_in->kill();
 }
 
-
-
 void XTRANSPORT::ReturnResult(int sport, xia::XSocketMsg *xia_socket_msg, int rc, int err)
 {
 	xia::X_Result_Msg *x_result = xia_socket_msg->mutable_x_result();
@@ -3445,6 +3484,7 @@ void XTRANSPORT::CreatePollEvent(unsigned short _sport, xia::X_Poll_Msg *msg)
 
 void XTRANSPORT::Xpoll(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 {
+
 	xia::X_Poll_Msg *poll_in = xia_socket_msg->mutable_x_poll();
 
 	if (poll_in->type() == xia::X_Poll_Msg::DOPOLL) {
@@ -3486,6 +3526,7 @@ void XTRANSPORT::Xpoll(unsigned short _sport, xia::XSocketMsg *xia_socket_msg)
 						}
 
 					} else if (sk->sock_type == SOCK_DGRAM || sk->sock_type == SOCK_RAW) {
+
 						if (sk->recv_buffer_count > 0) {
 							flags_out |= POLLIN;
 						}
