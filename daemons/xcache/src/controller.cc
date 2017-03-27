@@ -975,6 +975,7 @@ void xcache_controller::add_meta(xcache_meta *meta)
 void xcache_controller::set_conf(struct xcache_conf *conf)
 {
 	hostname = std::string(conf->hostname);
+	LOG_CTRL_INFO("hostname is %s\n", hostname.c_str());
 
 	n_threads = conf->threads;
 	threads = (pthread_t *)malloc(sizeof(pthread_t) * conf->threads);

@@ -86,6 +86,7 @@ int main(int argc, char *argv[])
 			/* long option passed */
 			if(!strcmp(options[option_index].name, "host")) {
 				sethostname(&xcache_conf, optarg);
+				printf("optarg: %s\n", optarg);
 			} else if(!strcmp(options[option_index].name, "help")) {
 				usage(argv);
 				return 0;
@@ -108,6 +109,7 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 			sethostname(&xcache_conf, optarg);
+			printf("optarg: %s\n", optarg);
 			break;
 		case 'l':
 			logger_conf.level = strtol(optarg, NULL, 10);

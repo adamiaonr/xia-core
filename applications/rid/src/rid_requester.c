@@ -246,8 +246,8 @@ int main(int argc, char **argv)
         &rid_dest_addr,
         &rid_dest_addr_len);
 
-    // 3.3.1) TODO: what should be set in the payload? send the full name for 
-    // now...
+    // 3.3.1) TODO: what should be set in the payload? send the 
+    // full name for now...
     char rid_packet_payload[RID_MAX_PACKET_SIZE] = {'\0'}; 
     strncpy(rid_packet_payload, name, RID_MAX_PACKET_SIZE);
     rid_packet_len = strlen(rid_packet_payload);
@@ -334,7 +334,7 @@ int main(int argc, char **argv)
             sockaddr_x cid_resp_addr;
             socklen_t cid_resp_addr_len;
 
-            // to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
+            to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
 
             // cleanup rid_resp just in case...
             memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
