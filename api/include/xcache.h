@@ -61,6 +61,13 @@ extern int XputChunk(XcacheHandle *h, const char *data, size_t length, sockaddr_
 extern int XputFile(XcacheHandle *h, const char *filename, size_t chunkSize, sockaddr_x **info);  //DONE
 extern int XputBuffer(XcacheHandle *h, const void *data, size_t length, size_t chunkSize, sockaddr_x **info);  //DONE
 extern int XputMetaChunk(XcacheHandle *h, sockaddr_x *metachunk, sockaddr_x *addrs, socklen_t addrlen, int count); //DONE
+extern int XpushChunkto(
+		XcacheHandle * h, 
+		const char * data, 
+		size_t data_len, 
+		sockaddr_x * cid_info,		// cid to be attributed to chunk 
+		sockaddr_x * dst_addr, 		// dest address for the chunk (e.g. a DAG)
+		socklen_t dst_addr_len);
 
 extern int XevictChunk(XcacheHandle *h, const char *cid);
 

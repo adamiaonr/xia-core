@@ -78,6 +78,7 @@ OBJS = string.o straccum.o glue.o \
 	confparse.o args.o archive.o processingt.o etraits.o elementmap.o \
 	userutils.o md5.o toolutils.o clp.o \
 	xid.o xiapath.o xiaheader.o xiautil.o ../../../api/dagaddr/cpp/dagaddr.o  \
+	xiaridutil.o xiaridheader.o \
 	../../../api/dagaddr/cpp/utils.o  \
 	@LIBOBJS@ @EXTRA_TOOL_OBJS@
 

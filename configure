@@ -6,7 +6,7 @@ OUTPUT=xia.mk
 if [ -z $DEBUG ]; then
 	CFLAGS="-O2 -DNDEBUG"
 else
-	CFLAGS="-ggdb -DDEBUG"
+	CFLAGS="-g -ggdb -DDEBUG"
 fi
 
 CFLAGS+=" -Wall -Wextra -std=c++11"
@@ -76,17 +76,19 @@ OPTFLAGS=--enable-waveremote --disable-wavelocal
 
 APIDIR=\$(XIADIR)/api
 BINDIR=\$(XIADIR)/bin
-XCACHEAPIDIR=\$(XIADIR)/daemons/xcache/api
+XCACHEAPIDIR=\$(XIADIR)/xcache/api
 ETC=\$(XIADIR)/etc
 XLIB=\$(APIDIR)/lib
 XINC=\$(APIDIR)/include
+# RID API directory
+RIDAPIDIR=\$(APIDIR)/rid
 
 CC=g++
 LD=g++
 CFLAGS=$CFLAGS -I\$(XINC)
 CXXFLAGS=$CFLAGS
 LDFLAGS=-lpthread -Wl,-rpath,\$(APIDIR)/lib
-LIBS=\$(XLIB)/libxcache.so \$(XLIB)/libXsocket.so \$(XLIB)/libdagaddr.so \$(XLIB)/libXssl.so
+LIBS=\$(XLIB)/libxcache.so \$(XLIB)/libXsocket.so \$(XLIB)/libdagaddr.so \$(XLIB)/libXssl.so \$(RIDAPIDIR)/bin/librid.so
 PYLDFLAGS=`python-config --ldflags`
 PYINCLUDES=`python-config --includes`
 

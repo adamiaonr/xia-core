@@ -18,6 +18,7 @@ message xcache_cmd {
 		XCACHE_FREE_CONTEXT = 15;
 		XCACHE_EVICT = 16;
 		XCACHE_CACHE = 17;
+		XCACHE_PUSH = 18;	/* added by RID experiments */
 	};
 
 	enum status_type {

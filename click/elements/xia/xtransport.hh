@@ -23,6 +23,12 @@
 #include "clicknet/tcp_timer.h"
 #include "clicknet/tcp_var.h"
 
+// @RID: includes for RIDs: patricia tries, rid utils and rid routing table
+#include <click/xiaridpatricia.hh>
+#include <click/xiaridutil.hh>
+#include "xiaridroutetable.hh"
+#include "xlog.hh"
+
 #if CLICK_USERLEVEL
 #include <list>
 #include <stdio.h>
@@ -180,6 +186,9 @@ private:
 
 	// For Content Push APIs
 	HashTable<XID, unsigned short> XIDtoPushPort;
+
+	// incoming connection to socket mapping (special for RIDs)
+	HashTable<unsigned, XIARIDPatricia<sock> *> RIDtoSock;
 
 	// incoming connection to socket mapping
 	HashTable<XID, sock*> XIDtoSock;

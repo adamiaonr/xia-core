@@ -78,6 +78,7 @@ GENERIC_OBJS = string.o straccum.o nameinfo.o \
 	xiarendezvous.o \
 	xiaifacetable.o \
 	error-syslog.o \
+	xiaridutil.o \
 	$(EXTRA_DRIVER_OBJS)
 
 EXTRA_DRIVER_OBJS = @EXTRA_DRIVER_OBJS@

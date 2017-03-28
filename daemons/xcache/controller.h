@@ -102,6 +102,12 @@ public:
 	int create_sender(void);
 	void send_content_remote(xcache_req *req, sockaddr_x *mypath);
 
+	/**
+	 * sends a content chunk to a specific address via a DGRAM socket
+	 * used for RID experiments
+	 */
+	int send_content_to_remote(xcache_cmd * cmd);
+
 	bool verify_content(xcache_meta *meta, const std::string *);
 
 	/**

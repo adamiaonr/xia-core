@@ -12,6 +12,7 @@ all:
 #	make -C demo
 #	make -C irc
 #	make -C multicast
+	make -C rid
 
 static: all
 
@@ -29,4 +30,5 @@ clean:
 #	make -C demo clean
 #	make -C irc clean
 #	make -C multicast clean
+	make -C rid clean
 

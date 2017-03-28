@@ -416,6 +416,9 @@ int xcache_controller::fast_process_req(int fd, xcache_cmd *resp, xcache_cmd *cm
 	case xcache_cmd::XCACHE_READ:
 		ret = RET_ENQUEUE;
 		break;
+	case xcache_cmd::XCACHE_PUSH:
+		send_content_to_remote(cmd);
+		break;
 
 	default:
 		syslog(LOG_WARNING, "Unknown message received\n");
@@ -727,6 +730,139 @@ void xcache_controller::send_content_remote(xcache_req* req, sockaddr_x *mypath)
 	}
 	syslog(LOG_DEBUG, "Send Done\n");
 
+}
+
+int xcache_controller::send_content_to_remote(xcache_cmd * cmd) 
+{
+	// everything we need is wrapped in the xcache_cmd, so let's unwrap it:
+	//	-# cid (string form)
+	char * cid = (char *) cmd->cid().c_str();
+	//	-# dst_addr 
+	//	-# dst_addr_len
+	// FIXME: don't know if this memcpy() technique will work...
+	sockaddr_x dst_addr;
+	size_t dst_addr_len = cmd->dag().length();
+	memcpy(&dst_addr, cmd->dag().c_str(), dst_addr_len);
+	// 	-# data, data_len
+	char * data = (char *) cmd->data().c_str();
+	size_t data_len = cmd->data().length();
+
+	// print everything for debugging purposes...
+	syslog(LOG_INFO, "xcache_controller::send_content_to_remote() : [CID] = %s\n", cid);
+	syslog(LOG_INFO, "xcache_controller::send_content_to_remote() : [DST_DAG] = %s\n", Graph(&dst_addr).dag_string().c_str());
+	syslog(LOG_INFO, "xcache_controller::send_content_to_remote() : [DATA] = %s\n", data);
+
+	// create a temp socket to send the CID packet
+	int x_sock = 0;
+	if ((x_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
+
+		syslog(LOG_ERR, "xcache_controller::send_content_to_remote() : Xsocket(SOCK_DGRAM) error = %d\n", errno);
+
+		return -1;
+	}
+
+	// FIXME: can we get away with binding this socket to a CID DAG?
+	sockaddr_x cid_addr;
+	socklen_t cid_addr_len;
+
+	// build a simple CID DAG 
+	// FIXME: what exctly does the DAG look like?
+	Node n_src;
+	Node n_cid(XID_TYPE_CID, cid);	
+	Graph cid_dag = n_src * n_cid;
+
+	// finally, get the sockaddr_x * struct
+	cid_dag.fill_sockaddr(&cid_addr);
+	cid_addr_len = sizeof(sockaddr_x);
+
+	if (Xbind(x_sock, (struct sockaddr *) &cid_addr, cid_addr_len) < 0) {
+
+		Xclose(x_sock);
+
+		syslog(LOG_ERR, 
+			"Unable to Xbind() to DAG %s error = %d\n",
+			Graph(&cid_addr).dag_string().c_str(),
+			errno);
+
+		return -1;
+	}
+
+	struct cid_header header;
+	size_t remaining;
+	size_t offset;
+	int sent;
+
+	header.version = htons(CID_HEADER_VER);
+	header.hlen = htons(sizeof(struct cid_header));
+	header.length = htonl(data_len);
+	// FIXME : the 2 fields below were arbitrarily filled, just to make things
+	// work for an experiment
+	header.hop_count = htonl(0);
+	header.ttl = htonl(255);
+
+	remaining = sizeof(header);
+	offset = 0;
+
+	syslog(LOG_DEBUG, "Header Send Start\n");
+
+	while (remaining > 0) {
+
+		sent = Xsendto(
+			x_sock,
+			(char *) &header + offset,
+			remaining,
+			0,
+			(struct sockaddr *) &dst_addr,
+			dst_addr_len);
+
+		if (sent < 0) {
+
+			syslog(LOG_ERR, "Xsendto() error = %d", errno);
+			Xclose(x_sock);
+		}
+
+		remaining -= sent;
+		offset += sent;
+	}
+
+	remaining = data_len;
+	offset = 0;
+
+	syslog(LOG_INFO, "xcache_controller::send_content_to_remote() : "\
+		"\n\t[DATA TO SEND] = %s"\
+		"\n\t[DATA LENGTH] = %d\n", 
+		data, data_len);
+
+	syslog(LOG_DEBUG, "xcache_controller::send_content_to_remote() : content send start\n");
+
+	while (remaining > 0) {
+
+		sent = Xsendto(
+			x_sock,
+			(char *) data + offset,
+			remaining,
+			0,
+			(struct sockaddr *) &dst_addr,
+			dst_addr_len);
+
+		syslog(LOG_DEBUG, "xcache_controller::send_content_to_remote() : sent = %d\n", sent);
+
+		if (sent < 0) {
+
+			syslog(LOG_ERR, "Xsendto() error = %d", errno);
+			Xclose(x_sock);
+		}
+
+		remaining -= sent;
+		offset += sent;
+		syslog(LOG_DEBUG, "xcache_controller::send_content_to_remote() : content send remaining %lu\n", remaining);
+	}
+
+	syslog(LOG_DEBUG, "xcache_controller::send_content_to_remote() : send done\n");
+
+	Xclose(x_sock);
+
+	return 0;
 }
 
 int xcache_controller::create_sender(void)

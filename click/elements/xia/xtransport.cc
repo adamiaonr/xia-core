@@ -830,6 +830,10 @@ void XTRANSPORT::ProcessDatagramPacket(WritablePacket *p_in)
 		WARN("ProcessDatagramPacket: sk == NULL\n");
 		return;
 	}
+
+	if (ntohl(_destination_xid.type()) == XidMap::id("RID"))
+		click_chatter("XTRANSPORT::ProcessDatagramPacket() : dport is %d", (int) sk->port);
+
 	dynamic_cast<XDatagram *>(sk)->push(p_in);
 }
 
@@ -1070,6 +1074,47 @@ sock *XTRANSPORT::XID2Sock(XID dest_xid)
 		// register their own rules?
 
 		return XIDtoSock.get(_xcache_sid);
+
+	} else if (ntohl(dest_xid.type()) == XidMap::id("RID")) {
+
+		// @RID: hack to find socket listening for the Longest
+		// Matching RID, in a special PATRICIA trie map, other than XIDtoSock.
+
+		// 1) get the hamming weight (nr. of bits set to '1') of dest_xid
+		int hw = rid_calc_weight(dest_xid);
+
+		click_chatter("XTRANSPORT::XID2Sock() : got an RID request %s (hw = %d)", 
+			dest_xid.unparse().c_str(), hw);
+
+		// 2) the sock structure should be found in the trie of index 'hw'
+		for (; hw > 0; hw--) {
+
+			if (!RIDtoSock[hw]) {
+
+				click_chatter("XTRANSPORT::XID2Sock() : no PATRICIA trie for hw = %d. skipping...\n", hw);
+
+			} else {
+
+				click_chatter("XTRANSPORT::XID2Sock() : initializing PATRICIA lookup for hw = %d \n", hw);
+
+				// search for
+				XIARIDPatricia<sock> * node = RIDtoSock[hw]->search(dest_xid);
+
+				if (node != NULL) {
+
+					click_chatter("XTRANSPORT::XID2Sock() : found match for RID %s : %s (hw = %d) \n", 
+						dest_xid.unparse().c_str(),
+						node->get_rid().unparse().c_str(),
+						hw);
+
+					sk = (sock *) node->get_data();
+					return sk;
+
+				} else {
+					click_chatter("XTRANSPORT::XID2Sock() : didn't find match for hw = %d \n", hw);
+				}
+			}
+		}
 	}
 
 	return NULL;
@@ -1442,25 +1487,60 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 		XID	source_xid = sk->src_path.xid(sk->src_path.destination_node());
 		//TODO: Add a check to see if XID is already being used
 
-		// Try to determine the outgoing interface based on src_path
-		// TODO: Should we do this only for stream sockets?
-		int iface;
-		if((iface = IfaceFromSIDPath(sk->src_path)) != -1) {
-			sk->outgoing_iface = iface;
+		// @RID: hack to add RIDs to PATRICIA trie RIDtoSock map
+		if (htonl(source_xid.type()) == XidMap::id("RID")) {
+
+			// 1) find the Hamming Weight (HW) of the RID
+			int hw = rid_calc_weight(source_xid);
+
+			// 2) is the RIDtoSock map empty for this HW?
+			if (!(RIDtoSock[hw])) {
+
+				// 2.1) if yes, create an new root entry
+				XIARIDPatricia<sock> * root =
+						new XIARIDPatricia<sock>(XIARIDPatricia<sock>::ROOT_NODE);
+
+				// 2.2) ... and add it to RIDtoSock[hw]
+				RIDtoSock[hw] = root;
+			}
+
+			// 3) insert the RID in the RIDtoSock[hw] : the RID PT insert()
+			// operation already checks for duplicate RIDs
+			XIARIDPatricia<sock> * new_entry = RIDtoSock[hw]->insert(source_xid, sk);
+			if (new_entry == NULL) {
+
+				ERROR("duplicate RID on RIDtoSock map: ",
+						source_xid.unparse().c_str());
+			}
+
+			WARN("added RID to RIDtoSock map: <%s, %d>", 
+				new_entry->get_rid().unparse().c_str(), (new_entry->get_data())->port);
+
+		} else {
+
+			// Try to determine the outgoing interface based on src_path
+			// TODO: Should we do this only for stream sockets?
+			int iface;
+			if((iface = IfaceFromSIDPath(sk->src_path)) != -1) {
+				sk->outgoing_iface = iface;
+			}
+
+			// Map the source XID to source port (for now, for either type of tranports)
+			XIDtoSock.set(source_xid, sk);
+			if(source_xid == _xcache_sid) {
+				sk->xcacheSock = true;
+			} else {
+				sk->xcacheSock = false;
+			}
 		}
 
-		// Map the source XID to source port (for now, for either type of tranports)
-		XIDtoSock.set(source_xid, sk);
-		if(source_xid == _xcache_sid) {
-			sk->xcacheSock = true;
-		} else {
-			sk->xcacheSock = false;
-		}
 		addRoute(source_xid);
+
 		idToSock.set(xia_socket_msg->id(), sk);
 		if (_sport != sk->port) {
 			ERROR("ERROR _sport %d, sk->port %d", _sport, sk->port);
 		}
+
 	} else {
 		rc = -1;
 		ec = EADDRNOTAVAIL;
