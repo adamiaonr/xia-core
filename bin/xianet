@@ -222,7 +222,7 @@ setup()
 	case $MAKECONF in
 		"")
 			# try to use the last valid configuration
-			get_last_config
+			# get_last_config
 			;;
 		router)
 			SCRIPT=router.click

@@ -3,7 +3,7 @@ from distutils.core import setup, Extension
 ridmodule = Extension('rid',
                     include_dirs = ['../../include',],
                     extra_link_args = ['-L../bin', '-lrid', '-Wl,-rpath-link=../bin'],  
-                    sources = ['ridmodule.c'])
+                    sources = ['ridmodule.cpp'])
 
 setup(name = 'PackageName',
        version = '1.0',

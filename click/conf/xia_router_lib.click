@@ -11,6 +11,12 @@ elementclass XIAToHost {
 	$click_port |
 	// Packets to send up to API
 	// input: packets to send up (usually xtransport[0])
+	// @RID: from Click's documentation: if a client UDP socket is configured 
+	// with a 0.0.0.0 IP, Socket() will send packets to the destination IP 
+	// annotation of each packet, which is set in XIA code via UDPIPPrep() to 
+	// 127.0.0.1 (localhost) at all times. I assume the same happens with 
+	// the destination port, which is also set to _dport by 
+	// SET_DST_PORT_ANNO().
 	input -> Socket("UDP", 0.0.0.0, 0, SNAPLEN 65536);
 };
 
@@ -70,7 +76,10 @@ elementclass XIAPacketRoute {
 	// print_in :: XIAPrint(">>> $local_hid (In Port $num) ");
 	// print_out :: XIAPrint("<<< $local_hid (Out Port $num)");
 
-	c :: XIAXIDTypeClassifier(next AD, next HID, next SID, next CID, next IP, next FID, -);
+	// @RID: let XIA identify the new XID type RID
+	//c :: XIAXIDTypeClassifier(next AD, next HID, next SID, next CID, next IP, -);
+	c :: XIAXIDTypeClassifier(next AD, next HID, next SID, next CID, next IP, next FID, next RID, -);
+
 	//print_in :: XIAPrint(">>> $local_hid (In Port $num) ");
 	// pdesty :: XIAPrint(">>>  DEST YES");
 	// pdestn :: XIAPrint(">>>  DEST NO");
@@ -116,21 +125,36 @@ elementclass XIAPacketRoute {
 
 	rt_AD, rt_HID, rt_SID, rt_CID, rt_IP :: XIAXIDRouteTable();
 	rt_FID :: FIDRouteEngine($num_ports);
-	c => rt_AD, rt_HID, rt_SID, rt_CID, rt_IP, rt_FID, [2]output;
+	// @RID: let RID use a new routing table click element instead of XIAXIDRouteTable()
+	rt_RID :: XIARIDRouteTable();
+
+	//c => rt_AD, rt_HID, rt_SID, rt_CID, rt_IP, rt_FID, [2]output;
+	c[0] -> rt_AD; //DEBUG BLOCK
+	c[1] -> rt_HID;
+	c[2] -> rt_SID;
+	c[3] -> rt_CID;
+	c[4] -> rt_IP;
+	c[5] -> rt_FID;
+	c[6] -> rt_RID;
+	c[7] -> [2]output;
 
 	// TO ADD A NEW USER DEFINED XID (step 3)
 	// add rt_XID_NAME before the arrow in the following 7 lines
 	// if the XID is used for routing like an AD or HID, add it to lines 1,2,4,5,7
 	// if the XID should be treated like a SID and will return data to the API, add it to lines 1,3,4,6,7
 
-	rt_AD[0], rt_HID[0], rt_SID[0], rt_CID[0], rt_IP[0], rt_FID[0]-> GPRP;
-	rt_AD[1], rt_HID[1], 					   rt_IP[1], rt_FID[1]-> XIANextHop -> check_dest;
-						 rt_SID[1], rt_CID[1]					  -> XIANextHop -> XIAPaint($DESTINED_FOR_LOCALHOST) -> [1]output;
-	rt_AD[2], rt_HID[2], rt_SID[2], rt_CID[2], rt_IP[2], rt_FID[2]-> consider_next_path;
-	rt_AD[3], rt_HID[3],			rt_CID[3], rt_IP[3], rt_FID[3]-> Discard;
-						 rt_SID[3]								  -> [3]output;
+    // @RID: since RID will be somewhat similar to CID, add it to the same 
+    // lines
+    // TODO: don't get the order... is it important?
+
+	rt_AD[0], rt_HID[0], rt_SID[0], rt_CID[0], rt_IP[0], rt_FID[0], rt_RID[0]	-> GPRP;
+	rt_AD[1], rt_HID[1], 					   rt_IP[1], rt_FID[1]				-> XIANextHop -> check_dest;
+						 rt_SID[1], rt_CID[1],						rt_RID[1]	-> XIANextHop -> XIAPaint($DESTINED_FOR_LOCALHOST) -> [1]output;
+	rt_AD[2], rt_HID[2], rt_SID[2], rt_CID[2], rt_IP[2], rt_FID[2], rt_RID[2]	-> consider_next_path;
+	rt_AD[3], rt_HID[3],			rt_CID[3], rt_IP[3], rt_FID[3], rt_RID[3]	-> Discard;
+						 rt_SID[3]								  				-> [3]output;
 	//NITIN disable XCMP REDIRECT messages
-	//NITIN rt_AD[4], rt_HID[4], rt_SID[4], rt_CID[4], rt_IP[4] rt_FID[4]-> x; // xcmp redirect message
+	//NITIN rt_AD[4], rt_HID[4], rt_SID[4], rt_CID[4], rt_IP[4] rt_FID[4]		-> x; // xcmp redirect message
 };
 
 
@@ -308,11 +332,12 @@ elementclass XIARoutingCore {
 	xtransport[0] -> XIAToHost($click_port);
 
 	Script(write n/proc/rt_HID.add - $FALLBACK);
-	Script(write n/proc/rt_AD.add - $FALLBACK);	 // no default route for AD; consider other path
-	Script(write n/proc/rt_SID.add - $FALLBACK);	 // no default route for SID; consider other path
-	Script(write n/proc/rt_CID.add - $FALLBACK);	 // no default route for CID; consider other path
+	Script(write n/proc/rt_AD.add - $FALLBACK);		// no default route for AD; consider other path
+	Script(write n/proc/rt_SID.add - $FALLBACK);	// no default route for SID; consider other path
+	Script(write n/proc/rt_CID.add - $FALLBACK);	// no default route for CID; consider other path
 	Script(write n/proc/rt_IP.add - $FALLBACK);		// no default route for IP; consider other path
 	Script(write n/proc/rt_FID.add - $DESTINED_FOR_BROADCAST);	// by default all FIDs are broadcast unless local
+    Script(write n/proc/rt_RID.add - $FALLBACK);	// no default route for RID; consider other path
 
 	// TO ADD A NEW USER DEFINED XID (step 4)
 	// create a default fallback route for the new XID
