@@ -1547,6 +1547,9 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 		}
 
 	} else {
+
+		click_chatter("XTRANSPORT::Xbind() : ! src_path.parse(sdag_string)");
+
 		rc = -1;
 		ec = EADDRNOTAVAIL;
 	}
