@@ -1477,6 +1477,8 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 		sk->initialized = true;
 		sk->port = _sport;
 
+		click_chatter("XTRANSPORT::Xbind() : SRC DAG STRING PARSED");
+
 		//Check if binding to full DAG or just to SID only
 		if (sk->src_path.first_hop_is_sid()) {
 			sk->full_src_dag = false;
