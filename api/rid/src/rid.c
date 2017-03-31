@@ -195,7 +195,8 @@ void to_rid_addr(
     Node n_rid(XID_TYPE_RID, &rid_str[4]);
 
     Graph direct_dag = n_src * n_rid;
-    Graph fallback_dag = n_src * local_dag.intent_AD() * local_dag.intent_HID() * n_rid;
+    // FIXME: we're not including the AD!
+    Graph fallback_dag = n_src * local_dag.intent_HID() * n_rid;
     Graph rid_dag = direct_dag + fallback_dag;
 
     // finally, fill the sockaddr_x * struct
