@@ -1459,9 +1459,6 @@ int XTRANSPORT::IfaceFromSIDPath(XIAPath sidPath)
 
 void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_socket_msg)
 {
-
-	click_chatter("XTRANSPORT::Xbind() : in");
-
 	int rc = 0, ec = 0;
 
 	xia::X_Bind_Msg *x_bind_msg = xia_socket_msg->mutable_x_bind();
@@ -1473,15 +1470,12 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 
 	if (!sk) {
 		ReturnResult(_sport, xia_socket_msg, -1, EBADF);
-		click_chatter("XTRANSPORT::Xbind() : !sk if");
 		return;
 	}
 
 	if (sk->src_path.parse(sdag_string)) {
 		sk->initialized = true;
 		sk->port = _sport;
-
-		click_chatter("XTRANSPORT::Xbind() : in src_path.parse(sdag_string)");
 
 		//Check if binding to full DAG or just to SID only
 		if (sk->src_path.first_hop_is_sid()) {
@@ -1494,7 +1488,8 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 		//TODO: Add a check to see if XID is already being used
 
 		// @RID: hack to add RIDs to PATRICIA trie RIDtoSock map
-		click_chatter("XTRANSPORT::Xbind() : %d vs. %d", htonl(source_xid.type()), XidMap::id("RID"));
+		click_chatter("XTRANSPORT::Xbind() : SRC XID TYPE : %d vs. RID TYPE %d", 
+			htonl(source_xid.type()), XidMap::id("RID"));
 		if (htonl(source_xid.type()) == XidMap::id("RID")) {
 
 			// 1) find the Hamming Weight (HW) of the RID
@@ -1549,8 +1544,6 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 		}
 
 	} else {
-
-		click_chatter("XTRANSPORT::Xbind() : ! src_path.parse(sdag_string)");
 
 		rc = -1;
 		ec = EADDRNOTAVAIL;

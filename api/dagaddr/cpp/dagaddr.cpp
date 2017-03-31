@@ -2148,7 +2148,7 @@ Graph::unparse_node_size() const
   */
 bool
 Graph::first_hop_is_sid() const
-{
+{	
 	// Get the source node
 	size_t source = source_index();
 	// Then it's first hop
@@ -2156,6 +2156,10 @@ Graph::first_hop_is_sid() const
 	size_t first_hop = edges[0];
 	// Test type of first hop
 	Node first_hop_node = get_node(first_hop);
+
+	// for some reason, this printf() enables the code to 
+	// advance after get_node()
+	printf("Graph::get_node() : [INFO] first_hop_node type\n", first_hop_node.type());
 	if (first_hop_node.type() == XID_TYPE_SID) {
 		return true;
 	}
