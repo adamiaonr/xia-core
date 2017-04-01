@@ -866,7 +866,10 @@ std::size_t
 Graph::index_from_dag_string_index(int32_t dag_string_index, std::size_t source_index, std::size_t sink_index) const
 {
 	if (dag_string_index == -1) return source_index;
-	if (dag_string_index == num_nodes()-1) return sink_index;
+	// FIXME: added a '>=' instead of '=='. the reasoning is that 
+	// while dag_string_index may be larger than sink_index, it 
+	// should not be larger than num_nodes() - 1, right?
+	if (dag_string_index >= num_nodes() - 1) return sink_index;
 
 	std::size_t real_index = dag_string_index;
 	if (source_index < sink_index)
@@ -1541,8 +1544,6 @@ Graph::get_node(int i) const
 		if (is_sink(j)) sink_index = j;
 	}
 
-	printf("Graph::get_node() : [INFO] i = %d, src_index = %d, sink_index = %d\n", 
-		i, src_index, sink_index);
 	return nodes_[index_from_dag_string_index(i, src_index, sink_index)];
 }
 
@@ -2157,12 +2158,9 @@ Graph::first_hop_is_sid() const
 	std::vector<std::size_t> edges = out_edges_[source];
 	size_t first_hop = edges[0];
 	// Test type of first hop
-	printf("Graph::first_hop_is_sid() : [INFO] first_hop = %d\n", first_hop);
 	Node first_hop_node = get_node(first_hop);
-
 	// for some reason, this printf() enables the code to 
 	// advance after get_node()
-	printf("Graph::first_hop_is_sid	() : [INFO] first_hop_node type\n", first_hop_node.type());
 	if (first_hop_node.type() == XID_TYPE_SID) {
 		return true;
 	}

@@ -164,54 +164,50 @@ char * to_rid_string(unsigned char * bf)
 
 void to_rid_addr(
     char * rid_str, 
-    char * dag_str,
+    char * localhost_dag_str,
     sockaddr_x * rid_addr,
     socklen_t * rid_addr_len) 
 {
-    // generate the RID DAG Graph, which will be composed by 4 nodes, like this:
+    // generate the rid DAG Graph, which will be composed by 3 or 4 
+    // nodes, like this:
     //
     // direct   :    (SRC) ---------------> (RID)
-    // fallback :      |--> (AD) --> (HID) -->|
+    // fallback :      \--> (AD) --> (HID) -->/
 
-    // we're given a DAG string (which format?). so the quickest way to 
+    // we're given a DAG string. so the quickest way to 
     // do this is : 
-    //  1) generate Graph from dag_str
-    //  2) build fallback and direct parts of the RID dag extracting the 
-    //     relevant Nodes from the Graph
-    //  3) merge the 2 parts into a final RID dag
-    //  4) call rid_dag.fill_sockaddr() to get the sockaddr_x struct
+    //  1) generate 3 nodes : 1 empty src node, 1 
+    //     hid node, extracted from the localhost DAG, and 
+    //     an rid node 
+    //  2) create direct and fallback DAGs, out of 
+    //     the nodes created at step 1.
+    //  3) merge the direct and fallback DAGs, creating the
+    //     final DAG
+    //  4) use fill_sockaddr() to fill the sockaddr_x structs
 
-    // generate a DAG from the passed string. this is usually created using 
-    // XreadLocalHostAddr(), so it represents a localhost DAG
-    Graph local_dag = Graph(std::string(dag_str));
-
-    // the new dags starts with empty source node
+    // generate the 3 nodes
     Node n_src;
-    // create a DAG node of type RID. we make use of a special constructor in 
-    // dagaddr.cpp which takes in a pair (string type_str, string id_str) as 
-    // argument and uses the Node::construct_from_strings() method: if type_str 
-    // is not a built-in type, it will look for it the the user defined types set 
-    // in /etc/xids, so this should work...
-    Node n_rid(XID_TYPE_RID, &rid_str[4]);
 
+    // extract the HID from the localhost DAG
+    Graph localhost_dag = Graph(std::string(localhost_dag_str));
+    // printf("rid::to_rid_addr() : hid str = \n%s\n\n",
+    //     localhost_dag.intent_HID().id_string().c_str());
+    Node n_hid(XID_TYPE_HID, localhost_dag.intent_HID().id_string());
+    // finally, create the rid node
+    Node n_rid(XID_TYPE_RID, std::string(&rid_str[4]));
+
+    // create direct and fallback DAGs, then merge them using 
+    // the '+' operator
     Graph direct_dag = n_src * n_rid;
-    // FIXME: we're not including the AD!
-    Graph fallback_dag = n_src * local_dag.intent_HID() * n_rid;
+    Graph fallback_dag = n_src * n_hid * n_rid;
     Graph rid_dag = direct_dag + fallback_dag;
 
+    // printf("rid::to_rid_addr() : rid_dag = \n%s\n\n",
+    //     rid_dag.dag_string().c_str());
+
     // finally, fill the sockaddr_x * struct
-    //rid_addr = (sockaddr_x *) malloc(sizeof(sockaddr_x));
     rid_dag.fill_sockaddr(rid_addr);
     *rid_addr_len = sizeof(sockaddr_x);
-
-    //direct_dag.print_graph();
-    //printf("\n");
-    //fallback_dag.print_graph();
-    //printf("\n");
-    //full_dag.print_graph();
-    //printf("\n");
-
-    //printf("%s\n", Graph(rid_addr).dag_string().c_str());
 }
 
 void to_cid_addr(

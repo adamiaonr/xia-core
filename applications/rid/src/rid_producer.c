@@ -153,6 +153,9 @@ int setup_rid_socket(char * rid_string)
                 "[rid_producer]: error reading localhost address\n");
     }
 
+    say("[rid_producer]: Extracted localhost DAG : %s\n",
+            localhost_dag_str);
+
     // create a local RID DAG, in the style AD:HID:RID (= rid_string).
     sockaddr_x rid_local_addr;
     socklen_t rid_local_addr_len;
