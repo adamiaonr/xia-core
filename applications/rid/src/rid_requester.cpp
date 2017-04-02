@@ -18,6 +18,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <arpa/inet.h>
 
 #include <iostream>
 #include <thread>
@@ -326,17 +327,18 @@ int main(int argc, char **argv)
 
             // we got something... read it as an rid_pckt struct
             struct rid_pckt * rid_rsp_pckt = (struct rid_pckt *) rid_resp;
-            say("[rid_requester]: received RID response: "\
+            say("[rid_requester]: received RID response (%d): "\
                     "\n\t[SRC. ADDR]: %s"\
                     "\n\t[RID]: %s"\
                     "\n\t[NAME]: %s"\
                     "\n\t[CID]: %s"\
                     "\n\t[PAYLOAD (SIZE)]: %s %d\n",
+                    bytes_rcvd,
                     Graph(&rid_resp_src).dag_string().c_str(),
                     rid_rsp_pckt->rid,
                     rid_rsp_pckt->name,
                     rid_rsp_pckt->cid,
-                    rid_rsp_pckt->data, rid_rsp_pckt->datalen);
+                    &rid_resp[sizeof(struct rid_pckt)], ntohs(rid_rsp_pckt->datalen));
         }
     }
 
