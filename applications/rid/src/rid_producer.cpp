@@ -267,9 +267,19 @@ int send_rid_response(
                 Graph(&cid_addr).dag_string().c_str(),
                 content_buffer, content_len);
 
-        // fill the data attributes of rid_pckt
+        say("[rid_producer]: just to make sure:"\
+                "\n\t[XID_SIZE] = %d"\
+                "\n\t[RID_STR_SIZE] = %d"\
+                "\n\t[PREFIX_MAX_LENGTH] = %d"\
+                "\n\t[RID_PCKT_HDR_LEN] = %d"\
+                "\n\t[sizeof(struct rid_pckt)] = %d\n",
+                XID_SIZE, RID_STR_SIZE, PREFIX_MAX_LENGTH, RID_PCKT_HDR_LEN, sizeof(struct rid_pckt));
+
+        // fill the datalen attribute of rid_pckt
         rid_rsp_pckt->datalen = htons((uint16_t) strlen(content_buffer));
-        strncpy(rid_rsp_pckt->data, content_buffer, 1024);
+        // fill the remaining bytes of rid_rsp_raw with the content
+        // associated with the rid
+        strncpy(&rid_rsp_raw[sizeof(struct rid_pckt)], content_buffer, 1024);
 
         // send it back using Xsendto() and an ephemeral SOCK_DGRAM
         int rid_rsp_sock = 0;
@@ -282,12 +292,27 @@ int send_rid_response(
             int rc = 0;
             if ((rc = Xsendto(
                 rid_rsp_sock,
-                rid_rsp_pckt, RID_PCKT_HDR_LEN + content_len,
+                rid_rsp_raw, sizeof(struct rid_pckt) + content_len,
                 0,
                 (const sockaddr *) rid_req_src,
                 rid_req_src_len)) < 0) {
 
                 warn("[rid_producer]: Xsendto() error = %d", errno);
+
+            } else {
+
+                printf("[rid_producer]: sent RID reply (%d):"\
+                        "\n\t[DST_DAG] = %s"\
+                        "\n\t[RID] = %s"\
+                        "\n\t[NAME] = %s"\
+                        "\n\t[CID] = %s"\
+                        "\n\t[PAYLOAD (SIZE)] = %s (%d)\n",
+                        rc,
+                        Graph(rid_req_src).dag_string().c_str(),
+                        rid_rsp_pckt->rid,
+                        rid_rsp_pckt->name,
+                        rid_rsp_pckt->cid,
+                        &rid_rsp_raw[sizeof(struct rid_pckt)], ntohs(rid_rsp_pckt->datalen));
             }
         }
     }
@@ -568,68 +593,14 @@ int main(int argc, char **argv)
             // check rid_sock and sid_sock separately
             if (FD_ISSET(rid_sock, &socket_fds)) {
 
-                say("[rid_producer]: ...on RID socket");
+                say("[rid_producer]: ...on RID socket\n");
                 process_rid_request(rid_sock, &xcache_handle);
-
-/*                if ((rc = Xrecvfrom(
-                        rid_sock,
-                        rid_req,
-                        rid_req_len,
-                        0,
-                        (struct sockaddr *) &rid_req_src,
-                        &rid_req_src_len)) < 0) {
-
-                    if (errno == EINTR)
-                        continue;
-
-                    warn("[rid_producer]: Xrecvfrom() error = %d", errno);
-                        continue;
-                }
-
-                say("[rid_producer]: got SID request at rid_sock from:"\
-                        "\n\t[SRC_DAG] = %s"\
-                        "\n\t[REQUESTED RID] = %s",
-                        Graph((sockaddr_x *) &sid_req_src).dag_string().c_str(),
-                        rid_req);
-
-                send_rid_response(
-                        &xcache_handle,
-                        std::string(rid_req),
-                        &rid_req_src,
-                        rid_req_src_len);*/
             }
 
             if (FD_ISSET(sid_sock, &socket_fds)) {
 
                 say("[rid_producer]: ...on SID socket");
                 process_rid_request(sid_sock, &xcache_handle);
-
-/*                if ((rc = Xrecvfrom(
-                        sid_sock,
-                        sid_req,
-                        sid_req_len,
-                        0,
-                        (struct sockaddr *) &sid_req_src,
-                        &sid_req_src_len)) < 0) {
-
-                    if (errno == EINTR)
-                        continue;
-
-                    warn("[rid_producer]: Xrecvfrom() error = %d", errno);
-                        continue;
-                }
-
-                say("[rid_producer]: got SID request at sid_sock from:"\
-                        "\n\t[SRC_DAG] = %s"\
-                        "\n\t[REQUESTED RID] = %s",
-                        Graph((sockaddr_x *) &sid_req_src).dag_string().c_str(),
-                        rid_req);
-
-                send_rid_response(
-                        &xcache_handle,
-                        std::string(rid_req),
-                        &sid_req_src,
-                        sid_req_src_len);*/
             }
 
         } else {

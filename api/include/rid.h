@@ -31,11 +31,10 @@
 #define PREFIX_DELIM "/"
 
 // @RID: 'RID:[40 CHARACTER STRING]\0'
-#define RID_STR_PREFIX "RID:"
-#define RID_STR_SIZE 4 + (XID_SIZE * 2) + 1
-#define RID_MAX_PACKET_SIZE 256
+#define RID_STR_PREFIX      "RID:"
+#define RID_STR_SIZE        (int) 4 + (2 * XID_SIZE) + 1
+#define RID_MAX_PACKET_SIZE (int) 256
 
-#define RID_PCKT_HDR_LEN (1 + (2 * RID_STR_SIZE) + PREFIX_MAX_LENGTH + 2)
 #define RID_PCKT_TYPE_REQUEST   0x01
 #define RID_PCKT_TYPE_REPLY     0x10
 
@@ -53,10 +52,9 @@ struct rid_pckt {
     char name[PREFIX_MAX_LENGTH];
     // the CID associated with the payload in the packet
     char cid[RID_STR_SIZE];
-    // rid replies carry content associated with the rid in a buffer (data[]), 
-    // of size datalen
+    // length of the content associated with the rid (transmitted 
+    // after struct rid_pckt)
     uint16_t datalen;
-    char data[];
 
 } __attribute__((packed));
 
