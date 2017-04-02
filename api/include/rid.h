@@ -35,18 +35,41 @@
 #define RID_STR_SIZE 4 + (XID_SIZE * 2) + 1
 #define RID_MAX_PACKET_SIZE 256
 
-char * name_to_rid(char * name);
-char * to_rid_string(unsigned char * bf);
+#define RID_PCKT_HDR_LEN (1 + (2 * RID_STR_SIZE) + PREFIX_MAX_LENGTH + 2)
+#define RID_PCKT_TYPE_REQUEST   0x01
+#define RID_PCKT_TYPE_REPLY     0x10
 
-void to_rid_addr(
-	char * rid_str,
-	char * dag_str,
-	sockaddr_x * rid_addr,
-	socklen_t * rid_addr_len);
+struct rid_pckt {
+    
+    // rid request or response
+    uint8_t type;
+    // the requested rid OR rid in response
+    char rid[RID_STR_SIZE];
+    // the full name (in text form) used in request or reply.
+    // FIXME : you may ask 'why do we waste bytes sending the prefix, 
+    // when the whole purpose was to avoid names of variable and unbounded 
+    // lenght?'. i've included this field for testing purposes, but its use 
+    // may be deprecated or made optional in the future
+    char name[PREFIX_MAX_LENGTH];
+    // the CID associated with the payload in the packet
+    char cid[RID_STR_SIZE];
+    // rid replies carry content associated with the rid in a buffer (data[]), 
+    // of size datalen
+    uint16_t datalen;
+    char data[];
 
-void to_cid_addr(
-	char * cid_string,
-	sockaddr_x * cid_addr,
-	socklen_t * cid_addr_len);
+} __attribute__((packed));
+
+extern char * name_to_rid(char * name);
+extern char * to_rid_string(unsigned char * bf);
+extern void to_rid_addr(
+    char * rid_str,
+    char * dag_str,
+    sockaddr_x * rid_addr,
+    socklen_t * rid_addr_len);
+extern void to_cid_addr(
+    char * cid_string,
+    sockaddr_x * cid_addr,
+    socklen_t * cid_addr_len);
 
 #endif

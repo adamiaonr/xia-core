@@ -12,7 +12,7 @@ RID_PRO_TARGET = rid_producer
 RID_REQ_TARGET = rid_requester
 
 # other helpful variables
-SRCEXT = c
+SRCEXT = cpp
 SOURCES = $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS = $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.o))
 
@@ -26,10 +26,10 @@ ifdef DEBUG
 CFLAGS += -g -ggdb -Wall -DDEBUG
 endif
 
-CFLAGS += $(INC)
+CFLAGS += $(INC) -std=c++11
 
 # add these libs for linking
-LIB += -lrid -lXsocket -ldagaddr -lxcache
+LIB += -lrid -lXsocket -ldagaddr -lxcache -pthread
 
 # EXTRA: required due to avoid overlinking with libbloom (a dependency of 
 # librid). this seems the right way of doing things (see this URL for more 

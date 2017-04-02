@@ -19,17 +19,22 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include <iostream>
+#include <thread>
+#include <string>
+#include <unordered_map>
+
 #include "rid.h"
 #include "xcache.h"
 #include "dagaddr.hpp"
 
-#define VERSION "v0.1"
-#define TITLE "XIA RID Requester Application"
+#define VERSION "v2.0"
+#define TITLE "XIA RID Producer Application"
 
 #define RID_REQUEST_DEFAULT_AD     (char *) "1000000000000000000000000000000000000002"
 #define RID_REQUEST_DEFAULT_HID    (char *) "0000000000000000000000000000000000000005"
 #define SID_REQUESTER       "SID:00000000dd41b924c1001cfa1e1117a812492434"
-#define ORIGIN_SERVER_NAME  "www_s.dgram_producer.aaa.xia"
+#define ORIGIN_SERVER_NAME  "www_s.rid_producer.xia"
 
 /*
 ** write the message to stdout unless in quiet mode
@@ -77,8 +82,9 @@ int setup_sid_sock() {
         die(-1, "[rid_requester]: Xsocket(SOCK_DGRAM) error = %d", errno);
     }
 
-    // FIXME: will use Xgetaddrinfo(name = NULL, ...) to build
+    // FIXME (1): will use Xgetaddrinfo(name = NULL, ...) to build
     // AD:HID:SIDx (= SID_REQUESTER) with local AD:HID
+    // FIXME (2, several months afterwards): why do we do this???
     struct addrinfo * local_addr_info;
 
     if (Xgetaddrinfo(
@@ -149,8 +155,7 @@ int main(int argc, char **argv)
     // similarly to other XIA example apps, print some initial info on the app
     say("\n%s (%s): started\n", TITLE, VERSION);
 
-    // 1) gather the application arguments
-
+    // gather the application arguments
     // if not enough arguments, stop immediately...
     if (argc < 3) {
         die(-1, "usage: rid_requester -n <URL-like name>\n");
@@ -169,6 +174,7 @@ int main(int argc, char **argv)
                 break;
 
             switch (*av[0]) {
+
                 // single URL-like name given as parameter to generate
                 // RIDs (e.g. uof/cs/r9x/r9001/)
                 case 'n':
@@ -177,20 +183,17 @@ int main(int argc, char **argv)
                     argc--, av++;
                     strncpy(name, av[0], strlen(av[0]));
                     break;
-
-                // file with list of URL-like names to generate RIDs for
-                // request
-                // case 'f':
-                //     argc--, av++;
-                //     //npackets = atoi(av[0]);
-                //     break;
             }
         }
 
         argc--, av++;
     }
 
-    // 2) create RID out of the provided name
+    // FIXME: this extra variable is just for testing purposes, get 'rid' of 
+    // names in text form in the future 
+    std::string extra_name = std::string(name);
+
+    // create RID out of the provided name
     if (name[0] != '\0') {
 
         rid_string = name_to_rid(name);
@@ -204,86 +207,99 @@ int main(int argc, char **argv)
         die(-1, "[rid_requester]: name string is empty\n");
     }
 
-    // 3) initialize the requester's xcache handle
-    say("[rid_requester]: initializing xcache handle...\n");
-    XcacheHandle xcache_handle; 
-    XcacheHandleInit(&xcache_handle);
-    say("[rid_requester]: ... done!\n");
+    // // initialize the requester's xcache handle
+    // say("[rid_requester]: initializing xcache handle...\n");
+    // XcacheHandle xcache_handle; 
+    // XcacheHandleInit(&xcache_handle);
+    // say("[rid_requester]: ... done!\n");
 
-    // 4) open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER, on 
+    // open a 'SOCK_DGRAM' Xsocket, make it listen on SID_REQUESTER, on 
     // which it will listen for RID responses
     x_sock = setup_sid_sock();
 
-    // 5) send the RID request
-    int rid_packet_len = 0;
+    // build the rid dag, which will be used to obtain a sockaddr_x struct 
+    // holding the destination address of the rid request packet
     sockaddr_x rid_dest_addr;
     socklen_t rid_dest_addr_len;
 
-    // get the AD and HID of origin server
+    // we want to generate and rid dag like this:
+    //
+    // direct   :    (SRC) -----------------------------> (RID)
+    // fallback :      \--> (AD_origin) --> (HID_origin) -->/
+    // 
+    // to do so, we fetch the dag of the remote origin server, based on 
+    // a name that we assume to know previously. note that the goal of 
+    // the rid request is to be served by any router in-between which holds 
+    // content (i.e. cids) associated with the rid, and not to go all the way 
+    // to the origin server
     Graph remote_dag;
     if (feth_remote_dag(ORIGIN_SERVER_NAME, remote_dag) < 0) {
 
-        Node n_src, n_ad(XID_TYPE_AD, RID_REQUEST_DEFAULT_AD), n_hid(XID_TYPE_HID, RID_REQUEST_DEFAULT_HID);
-        remote_dag = n_src * n_ad * n_hid;
+        Xclose(x_sock);
+        free(name);
+        free(rid_string);
+
+        die(-1, "[rid_requester]: could not fetch remote dag. exiting.\n");
     }
 
+    // replace the final intent of remote_dag w/ an rid node and add a 
+    // fallback address
     to_rid_addr(
         rid_string, 
         (char *) remote_dag.dag_string().c_str(),
         &rid_dest_addr,
         &rid_dest_addr_len);
 
-    // 3.3.1) TODO: what should be set in the payload? send the 
-    // full name for now...
-    char rid_packet_payload[RID_MAX_PACKET_SIZE] = {'\0'}; 
-    strncpy(rid_packet_payload, name, RID_MAX_PACKET_SIZE);
-    rid_packet_len = strlen(rid_packet_payload);
+    // build the rid request packet, using the rid_pckt struct
+    char rid_req_raw[2048] = { '\0' };
+    struct rid_pckt * rid_req_pckt = (struct rid_pckt *) rid_req_raw;
+
+    // set rid_req_pckt to the request type, set the rid field and name, with 
+    // empty cid and payload
+    rid_req_pckt->type = RID_PCKT_TYPE_REQUEST;
+    strncpy(rid_req_pckt->rid, rid_string, RID_STR_SIZE);
+    strncpy(rid_req_pckt->name, extra_name.c_str(), PREFIX_MAX_LENGTH);
+    rid_req_pckt->datalen = 0;
 
     say("[rid_requester]: sending RID request:"\
             "\n\t[DST_DAG] = %s"\
-            "\n\t[PAYLOAD] = %s\n",
+            "\n\t[RID] = %s"\
+            "\n\t[NAME] = %s\n",
             Graph(&rid_dest_addr).dag_string().c_str(),
-            rid_packet_payload);
+            rid_req_pckt->rid,
+            rid_req_pckt->name);
     
+    // finally, send the rid request packet, towards the 
+    // rid destination address build above
     int rc = 0;
-
     rc = Xsendto(
             x_sock,
-            rid_packet_payload,
-            rid_packet_len,
+            rid_req_pckt, RID_PCKT_HDR_LEN,
             0,
             (struct sockaddr *) &rid_dest_addr,
             rid_dest_addr_len);
 
-    // 3.2) check status of RID request
-    if (rc < 0 || rc != rid_packet_len) {
-
-        if (rc < 0) {
-            die(-1, "[rid_requester]: Xsendto() error = %d", errno);
-        }
-
-        printf("[rid_requester]: sent RID request:"\
-                "\n\t[DST_DAG] = %s"\
-                "\n\t[PAYLOAD] = %s"\
-                "\n\t[RETURN_CODE] = %d\n",
-                Graph(&rid_dest_addr).dag_string().c_str(),
-                rid_packet_payload,
-                rc);
-
-        fflush(stdout);
+    // check status of RID request
+    if (rc < 0) {
+        die(-1, "[rid_requester]: Xsendto() error = %d", errno);
     }
 
-    // 4) listen to responses to the RID request 
+    printf("[rid_requester]: sent RID request:"\
+            "\n\t[DST_DAG] = %s"\
+            "\n\t[RETURN_CODE] = %d\n",
+            Graph(&rid_dest_addr).dag_string().c_str(),
+            rc);
 
-    // 4.4) start listening to RID responses
+    fflush(stdout);
+
+    // listen to responses to the RID request 
     // FIXME: ... for now, in an endless loop. this is likely to change in the
-    // future after i receive some feedback from prs on the RID protocols
+    // future after i receive some feedback from prs on the rid protocols
     sockaddr_x rid_resp_src;
     socklen_t rid_resp_src_len = sizeof(sockaddr_x);
 
     // a buffer for the RID response(s)
-    char rid_resp[RID_MAX_PACKET_SIZE]; 
-    char * xfetch_chunk_buf;
+    unsigned char rid_resp[2048]; 
     int rid_resp_len = sizeof(rid_resp);
 
     while (1) {
@@ -291,11 +307,10 @@ int main(int argc, char **argv)
         say("[rid_requester]: listening for new responses...\n");
 
         int bytes_rcvd = -1;
-
         // cleanup rid_resp just in case...
-        memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
+        memset(rid_resp, 0, 2048);
 
-        // 4.4.1) Xrecvfrom() blocks while waiting for something to
+        // Xrecvfrom() blocks while waiting for something to
         // appear on x_sock
         if ((bytes_rcvd = Xrecvfrom(
                                 x_sock,
@@ -309,40 +324,19 @@ int main(int argc, char **argv)
 
         } else {
 
+            // we got something... read it as an rid_pckt struct
+            struct rid_pckt * rid_rsp_pckt = (struct rid_pckt *) rid_resp;
             say("[rid_requester]: received RID response: "\
                     "\n\t[SRC. ADDR]: %s"\
-                    "\n\t[PAYLOAD]: %s"\
-                    "\n\t[SIZE]: %d\n",
+                    "\n\t[RID]: %s"\
+                    "\n\t[NAME]: %s"\
+                    "\n\t[CID]: %s"\
+                    "\n\t[PAYLOAD (SIZE)]: %s %d\n",
                     Graph(&rid_resp_src).dag_string().c_str(),
-                    rid_resp,
-                    rid_resp_len);
-
-            // 4.3) use the CID given in the payload to fetch content from the 
-            // local cache, using xcache interfaces
-            sockaddr_x cid_resp_addr;
-            socklen_t cid_resp_addr_len;
-
-            to_cid_addr(rid_resp, &cid_resp_addr, &cid_resp_addr_len);
-
-            // cleanup rid_resp just in case...
-            memset(rid_resp, 0, RID_MAX_PACKET_SIZE);
-
-            // 4.4) use XfetchChunk() to get the CID's content
-            if (XfetchChunk(
-                            &xcache_handle, 
-                            (void **) &xfetch_chunk_buf, XCF_BLOCK, 
-                            &cid_resp_addr, cid_resp_addr_len) < 0) {
-
-                warn("[rid_requester]: XfetchChunk() error = %d", errno);
-
-            } else {
-
-                say("[rid_requester]: contents of included CID: "\
-                        "\n\t[CID]: %s"\
-                        "\n\t[CONTENT]: %s\n",
-                        Graph(&cid_resp_addr).dag_string().c_str(),
-                        xfetch_chunk_buf);
-            }
+                    rid_rsp_pckt->rid,
+                    rid_rsp_pckt->name,
+                    rid_rsp_pckt->cid,
+                    rid_rsp_pckt->data, rid_rsp_pckt->datalen);
         }
     }
 
@@ -352,7 +346,6 @@ int main(int argc, char **argv)
     say("[rid_requester]: this is rid_requester, signing off...");
 
     Xclose(x_sock);
-
     free(name);
     free(rid_string);
 

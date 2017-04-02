@@ -51,7 +51,7 @@ XIASelectPath::push(int, Packet *p)
         int next = XIA_NEXT_PATH_ANNO(p) + 1;
         SET_XIA_NEXT_PATH_ANNO(p, next);
 
-		// had any path to consider?
+               // had any path to consider?
         if (next < CLICK_XIA_XID_EDGE_NUM)
             output(0).push(p);
         else
