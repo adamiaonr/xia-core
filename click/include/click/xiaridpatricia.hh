@@ -552,8 +552,6 @@ int XIARIDPatricia<T>::lookup(
 		return pos_matches;
 	}
 
-	click_chatter("XIARIDPatricia<T>::lookup()) : matching...\n");
-
 	// XXX: when looking up an RID PT (accounting for FPs), we always
 	// follow the left branch of the PT, and selectively follow the
 	// right branch.
@@ -574,6 +572,10 @@ int XIARIDPatricia<T>::lookup(
 	// position F->key_bit. therefore, if the test ((match(R) & match(F))
 	// == match(F)) is false (which can only happen if F has a '1' at
 	// F->key_bit), then we can bypass the right sub-PT.
+
+	click_chatter("XIARIDPatricia<T>::lookup()) : matching %s vs. %s...\n",
+		rid.unparse().c_str(), this->rid.unparse().c_str());
+
 	if (rid_match_mask(rid, this->rid, this->key_bit)) {
 
 		click_chatter("XIARIDPatricia<T>::lookup()) : %s partially matches w/ %s (mask %d)\n",

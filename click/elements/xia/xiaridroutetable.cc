@@ -683,18 +683,33 @@ void XIARIDRouteTable::handle_unicast_packet(
  */
 void XIARIDRouteTable::lookup_route(int in_ether_port, Packet * p) {
 
-	click_chatter("XIARIDRouteTable::lookup_route() : [ENTER] time for the router to... uh... 'find a way!'\n");
+	// understanding how we isolate the destination 
+	// node seems to be complicated. let's see if we can understand
+	// this one. use Han 2012, section 3.3.1 as an 'in-English please...' 
+	// reference for this.
 
+	// get a click_xia, which represents a network layer xia packet header.
 	const struct click_xia * hdr = p->xia_header();
+	// get the index of the previously visited node. this is the index of the 
+	// node at which the forwarding lookup will start.
 	int last = hdr->last;
+	click_chatter("XIARIDRouteTable::lookup_route() : last = %d\n", last);
 
-	if (last < 0)
-		last += hdr->dnode;
+	// hdr->dnode : nr. of nodes in destination dag
+	// hdr->snode : nr. of nodes in source dag
+	if (last == LAST_NODE_DEFAULT) last = hdr->dnode - 1;
+	click_chatter("XIARIDRouteTable::lookup_route() : last = %d, dnode = %d\n", 
+		last, hdr->dnode);
 
+	// after adjusting and getting the index of the last visited node, we 
+	// obtain the array of edges adjacent to it.
 	const struct click_xia_xid_edge * edge = hdr->node[last].edge;
+	// we then isolate the 'current_edge'. 
 	const struct click_xia_xid_edge & current_edge = edge[XIA_NEXT_PATH_ANNO(p)];
-
 	const int & idx = current_edge.idx;
+
+	click_chatter("XIARIDRouteTable::lookup_route() : XIA_NEXT_PATH_ANNO(p) = %d, idx = %d\n", 
+		XIA_NEXT_PATH_ANNO(p), idx);
 
 	if (idx == CLICK_XIA_XID_EDGE_UNUSED) {
 
