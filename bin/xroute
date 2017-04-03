@@ -607,35 +607,32 @@ class XrouteApp:
 	def addPrefixRoute(self, text):
 		
 		parts = text.split(",")
-		
-		if len(parts)  < 4 or len(parts) > 6:
+		if len(parts)  < 3 or len(parts) > 5:
 			self.errorExit("Invalid format for add route command")
 
-		device = parts[0]
-		table = parts[1]
-		prefix = parts[2]
-		port = parts[3]
+		table = parts[0]
+		prefix = parts[1]
+		port = parts[2]
 
-		if len(parts) >= 5:
-			nexthop = parts[4]
+		if len(parts) >= 4:
+			nexthop = parts[3]
 		else:
 			nexthop = ""
 
-		if len(parts) == 6:
-			flags = parts[5]
+		if len(parts) == 5:
+			flags = int(parts[4])
 		else:
 			flags = 0
+                flags |= F_STATIC_ROUTE
 			
-		found = False
-
-		for d in self.devices:
-			if d == device:
-				found = True
-
-		if found == False:
-			self.errorExit("device %s unknown" % (device));
 		if table not in (KNOWN_XIDS):
 			print "attempting to add a route for a non-standard XID: %s" % table
+		if (table != "RID"):
+			self.errorExit("can't add prefixes to non-RID tables")
+		if (prefix == None or prefix == ""):
+			self.errorExit("prefix not specified")
+		if (port == None or port == ""):
+			self.errorExit("port not specified")
 
 		# at this point, convert the prefix into an XID (of type RID)
 
@@ -644,18 +641,11 @@ class XrouteApp:
 		# RID / Bloom Filter library all over again...
 		xid = rid.name_to_rid(prefix);
 
-		if (xid == None or xid == ""):
-			self.errorExit("XID not specified")
-		if xid == "default":
-			xid = "-";
-		if (port == None or port == ""):
-			self.errorExit("port not specified")
-
-		cmd = "%s/xrc/n/proc/rt_%s.set4 %s,%s,%s,%s" % (device, table, xid, port, nexthop, flags)
+		cmd = "%s/xrc/n/proc/rt_%s.set4 %s,%s,%s,%s" % (self.device, table, xid, port, nexthop, flags)
 		print cmd
 
 		self.writeData(cmd)
-		print "%s: added route for %s:%s" % (device, table, self.config.getAlias(xid))
+		print "added RID route for %s:%s" % (table, self.config.getAlias(xid))
 
 	#
 	# read a command file and add / delete routes as specified
