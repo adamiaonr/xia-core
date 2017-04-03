@@ -54,6 +54,12 @@ class XIARIDPatricia {
 		ROOT_NODE = 0x01
 	};
 
+	enum RID_MATCH_MODE {
+
+		EXACT_MATCH = 	0x00,
+		PREFIX_MATCH = 	0x01
+	};
+
 	/*
 	 * ****************************************
 	 * CONSTRUCTORS
@@ -149,7 +155,12 @@ class XIARIDPatricia {
 			void * obj_ptr);
 
 	// rid search : checks if rid exists in a PT
-	XIARIDPatricia<T> * search(const XID & rid);
+	XIARIDPatricia<T> * search(
+		const XID & rid, 
+		XIARIDPatricia<T>::RID_MATCH_MODE mode = XIARIDPatricia<T>::PREFIX_MATCH);
+
+	// rid update : update the data field in a node in the PT
+	XIARIDPatricia<T> * update(const XID & rid, T * data);
 
 	// node count
 	int count();
@@ -314,7 +325,6 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::insert(
  * REMOVE()
  * ****************************************
  */
-
 /**
  * \brief removes a PT node on the calling node sub-PT, given an RID
  *
@@ -622,7 +632,9 @@ int XIARIDPatricia<T>::lookup(
 // Click: XIARIDPatricia::_is_bit_set() : checking bit at position 0 (19), i.e. (rid[128] AND 00) = F9C740
 
 template<class T>
-XIARIDPatricia<T> * XIARIDPatricia<T>::search(const XID & rid) {
+XIARIDPatricia<T> * XIARIDPatricia<T>::search(
+	const XID & rid,
+	XIARIDPatricia<T>::RID_MATCH_MODE mode) {
 
 	XIARIDPatricia<T> * curr = this;
 
@@ -649,8 +661,29 @@ XIARIDPatricia<T> * XIARIDPatricia<T>::search(const XID & rid) {
 	} while (i < curr->key_bit);
 
 	// despite being the best match: is this the PT that we really want?
-	//return ((curr->rid == rid) ? curr : NULL);
-	return ((rid_match(rid, curr->rid)) ? curr : NULL);
+
+	if (mode == XIARIDPatricia<T>::EXACT_MATCH)
+		return ((curr->rid == rid) ? curr : NULL);
+	else
+		return ((rid_match(rid, curr->rid)) ? curr : NULL);
+}
+
+/*
+ * ****************************************
+ * UPDATE()
+ * ****************************************
+ */
+template<class T>
+XIARIDPatricia<T> * XIARIDPatricia<T>::update(
+	const XID & rid,
+	T * data) {
+
+	// find the PATRICIA trie node w/ rid
+	XIARIDPatricia<T> * to_update = search(rid);
+	// update its data value (if existent)
+	if (to_update) to_update->data = data;
+
+	return to_update;
 }
 
 /*

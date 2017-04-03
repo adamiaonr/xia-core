@@ -684,6 +684,13 @@ bool XTRANSPORT::TeardownSocket(sock *sk)
 			delRoute(src_xid);
 			XIDtoSock.erase(src_xid);
 		}
+
+		// @RID: if the socket is from an RID listener, then remove it
+		// FIXME: i myself don't trust the implementation of remove(), so
+		// just update the pointed-to sock * w/ NULL
+		if (ntohl(src_xid.type()) == XidMap::id("RID")) {
+			RIDtoSock[rid_calc_weight(src_xid)]->update(src_xid, NULL);
+		}
 	}
 
 	idToSock.erase(sk->get_id());
@@ -1505,17 +1512,31 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 				RIDtoSock[hw] = root;
 			}
 
-			// 3) insert the RID in the RIDtoSock[hw] : the RID PT insert()
-			// operation already checks for duplicate RIDs
-			XIARIDPatricia<sock> * new_entry = RIDtoSock[hw]->insert(source_xid, sk);
-			if (new_entry == NULL) {
+			// 3) insert the RID in the RIDtoSock[hw]
+			XIARIDPatricia<sock> * entry = RIDtoSock[hw]->search(source_xid, XIARIDPatricia<sock>::EXACT_MATCH);
+			if (entry != NULL) {
 
-				ERROR("duplicate RID on RIDtoSock map: ",
-						source_xid.unparse().c_str());
+				ERROR("duplicate entry on RIDtoSock map: %s", entry->get_rid().unparse().c_str());
+
+				if (entry->get_data() == NULL) {
+
+					INFO("duplicate RIDtoSock map entry is unreferenced. ok to update().");
+					entry = RIDtoSock[hw]->update(source_xid, sk);
+					
+					INFO("updated unreferenced RIDtoSock map entry: <%s, %d>", 
+						entry->get_rid().unparse().c_str(), (entry->get_data())->port);
+
+				} else {
+
+					ERROR("duplicate RIDtoSock map entry sock %d referenced by %d processes", 
+						(entry->get_data())->port, (entry->get_data())->refcount);
+				}
+
 			} else {
 
-				INFO("added RID to RIDtoSock map: <%s, %d>", 
-					new_entry->get_rid().unparse().c_str(), (new_entry->get_data())->port);
+				entry = RIDtoSock[hw]->insert(source_xid, sk);
+				INFO("added new entry to RIDtoSock map: <%s, %d (%d)>", 
+					entry->get_rid().unparse().c_str(), (entry->get_data())->port, sk->port);
 			}
 
 		} else {
@@ -1629,6 +1650,8 @@ void XTRANSPORT::Xclose(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia
 
 	should_delete = sk->isAcceptedSocket;
 	ref = --sk->refcount;
+
+	INFO("Xclose() : refcount of %d is %d, teardown_now is %s", sk->port, sk->refcount, (teardown_now ? "TRUE":"FALSE"));
 
 	if (ref == 0) {
 

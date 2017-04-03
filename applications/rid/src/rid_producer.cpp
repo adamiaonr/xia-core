@@ -35,6 +35,7 @@
 #include "dagaddr.hpp"
 #include "rid.h"
 #include "xcache.h"
+#include "signal_handler.h"
 
 #define VERSION "v2.0"
 #define TITLE "XIA RID Producer Application"
@@ -137,13 +138,22 @@ std::string to_rid_str(std::string full_name) {
 }
 
 void content_producer(
+    SignalHandler * signal_handler,
     std::string prefix,
     XcacheHandle * xcache_handle) {
 
-    int cnt = 3;
     std::string latest_str = std::string("latest");
+    time_t last_wakeup = 0;
 
     do {
+
+        if (((int) difftime(time(NULL), last_wakeup)) < PRODUCTION_PERIOD) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            continue;
+        }
+
+        // update last_wakeup
+        time(&last_wakeup);
 
         // generate a sensor value, save it in value_str
         char value_str[128] = {'\0'};
@@ -200,10 +210,7 @@ void content_producer(
                     RID_RECORD_TABLE[rid_str].back()->cid.c_str());   
         }
 
-        // sleep for a bit...
-        std::this_thread::sleep_for(std::chrono::seconds(PRODUCTION_PERIOD));
-
-    } while(--cnt > 0);
+    } while(!(signal_handler->got_exit_signal()));
 }
 
 int send_rid_response(
@@ -325,7 +332,9 @@ int setup_rid_socket(char * rid_string)
     int rid_sock = 0;
 
     if ((rid_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
-        die(-1, "[rid_producer]: Xsocket(SOCK_DGRAM) error = %d", errno);
+
+        warn("[rid_producer]: Xsocket(SOCK_DGRAM) error = %d", errno);
+        return -1;
     }
 
     char localhost_dag_str[MAX_DAG_SIZE] = { 0 };
@@ -336,8 +345,10 @@ int setup_rid_socket(char * rid_string)
             localhost_dag_str, MAX_DAG_SIZE,
             localhost_4id_str, MAX_DAG_SIZE) < 0 ) {
 
-        die(    -1,
-                "[rid_producer]: error reading localhost address\n");
+        Xclose(rid_sock);
+
+        warn("[rid_producer]: error reading localhost address\n");
+        return -1;
     }
 
     say("[rid_producer]: extracted localhost DAG : %s\n",
@@ -361,10 +372,10 @@ int setup_rid_socket(char * rid_string)
 
         Xclose(rid_sock);
 
-        die(    -1,
-                "[rid_producer]: unable to Xbind() to DAG %s error = %d\n",
-                Graph(&rid_local_addr).dag_string().c_str(),
-                errno);
+        warn("[rid_producer]: unable to Xbind() to DAG %s error = %d\n",
+            Graph(&rid_local_addr).dag_string().c_str(),
+            errno);
+        return -1;
     }
 
     say("[rid_producer]: will listen to RID packets directed at: \n%s\n\n",
@@ -378,7 +389,9 @@ int setup_sid_socket()
     int sid_sock;
 
     if ((sid_sock = Xsocket(AF_XIA, SOCK_DGRAM, 0)) < 0) {
-        die(-1, "[rid_producer::]: Xsocket(SOCK_DGRAM) error = %d", errno);
+
+        warn("[rid_producer::]: Xsocket(SOCK_DGRAM) error = %d", errno);
+        return -1;
     }
 
     // we want to associate PRODUCER_NAME to a DAG with the following 
@@ -391,8 +404,13 @@ int setup_sid_socket()
     //
     // we do it via Xgetaddrinfo()
     struct addrinfo * local_addr_info;
-    if (Xgetaddrinfo(NULL, ORIGIN_SERVER_SID, NULL, &local_addr_info) != 0)
-        die(-1, "[rid_producer]: Xgetaddrinfo() error\n");
+    if (Xgetaddrinfo(NULL, ORIGIN_SERVER_SID, NULL, &local_addr_info) != 0) {
+
+        Xclose(sid_sock);
+
+        warn("[rid_producer]: Xgetaddrinfo() error\n");
+        return -1;
+    }
 
     sockaddr_x * listen_addr = (sockaddr_x *) local_addr_info->ai_addr;
 
@@ -401,8 +419,14 @@ int setup_sid_socket()
         Graph(listen_addr).dag_string().c_str());
 
     // associate the name PRODUCER_NAME to the DAG address
-    if (XregisterName(ORIGIN_SERVER_NAME, listen_addr) < 0 )
-        die(-1, "[rid_producer]: error registering name: %s\n", ORIGIN_SERVER_NAME);
+    if (XregisterName(ORIGIN_SERVER_NAME, listen_addr) < 0 ) {
+
+        Xclose(sid_sock);
+
+        warn("[rid_producer]: error registering name: %s\n", ORIGIN_SERVER_NAME);
+        return -1;
+    }
+
     say("[rid_producer]: producer registered name: \n%s\n\n", ORIGIN_SERVER_NAME);
 
     // finally, bind sid_socket to the generated DAG
@@ -413,10 +437,11 @@ int setup_sid_socket()
 
         Xclose(sid_sock);
 
-        die(    -1,
-                "[rid_producer]: unable to Xbind() to DAG %s error = %d",
-                Graph(listen_addr).dag_string().c_str(),
-                errno);
+        warn("[rid_producer]: unable to Xbind() to DAG %s error = %d",
+            Graph(listen_addr).dag_string().c_str(),
+            errno);
+
+        return -1;
     }
 
     return sid_sock;
@@ -476,6 +501,37 @@ int main(int argc, char **argv)
     char * name = (char *) calloc(PREFIX_MAX_LENGTH, sizeof(char));
     char * rid_string;
 
+    // create a file descriptor set
+    fd_set socket_fds;
+    // max fd required for select() call
+    int max_sock = 0;
+    // set a small timeout for the select() call (e.g. 500 ms)
+    struct timeval timeout;
+    int rc = 0;
+
+    // FIXME: this extra variable is just for testing purposes, get 'rid' of 
+    // names in text form in the future 
+    std::string extra_name = "";
+
+    XcacheHandle xcache_handle; 
+    // we use of a signal handler to catch CTRL+C and exit the program 
+    // gracefully. if caught in the middle of a query, it waits for the query 
+    // to finish.
+    SignalHandler signal_handler;
+
+    try {
+
+        signal_handler.setup_signal_handlers();
+
+    } catch (SignalException& e) {
+
+        warn("[rid_producer]: SignalException: %s graceful CTRL+C termination won't work\n", 
+            e.what());
+    }
+
+    // the content producer C++11 thread
+    std::thread * content_producer_thread;
+
     // similarly to other XIA example apps, print some initial info on the app
     say("\n%s (%s): started\n\n", TITLE, VERSION);
 
@@ -484,6 +540,7 @@ int main(int argc, char **argv)
     if (argc < 3) {
         die(-1, "[rid_producer]: usage: rid_producer -n <URL-like (producer) name>\n");
     }
+
     // argc : nr. of arguments
     // argv : double char pointer for argument strings
     char **av = argv;
@@ -520,7 +577,7 @@ int main(int argc, char **argv)
 
     // FIXME: this extra variable is just for testing purposes, get 'rid' of 
     // names in text form in the future 
-    std::string extra_name = std::string(name);
+    extra_name = std::string(name);
 
     // create RID to be served by this producer
     if (name[0] != '\0') {
@@ -534,38 +591,42 @@ int main(int argc, char **argv)
     } else {
 
         // if no name has been specified, no point going on...
-        die(-1, "[rid_producer]: name string is empty. exiting.\n");
+        warn("[rid_producer]: name string is empty. exiting.\n");
+        goto end;
     }
 
     // initialize the producer's xcache handle
     say("[rid_producer]: initializing xcache handle\n");
-    XcacheHandle xcache_handle; 
     XcacheHandleInit(&xcache_handle);
     say("[rid_producer]: xcache handle initialization done\n");
 
     // launch the content producer thread, which periodically
     // creates and saves content into xcache, updating the 
     // rid:cid map
-    std::thread producer(content_producer, extra_name, &xcache_handle);
+    content_producer_thread = new std::thread(
+        content_producer, 
+        &signal_handler, 
+        extra_name, 
+        &xcache_handle);
 
     // setup RID and SID sockets
-    rid_sock = setup_rid_socket(rid_string);
-    sid_sock = setup_sid_socket();
+    if ((rid_sock = setup_rid_socket(rid_string)) < 0) { 
+        warn("[rid_producer]: error creating rid socket\n");
+        goto end;
+    }
+
+    if ((sid_sock = setup_sid_socket()) < 0) {
+        warn("[rid_producer]: error creating sid socket\n");   
+        goto end;
+    }
 
     // select() monitors both rid_sock and sid_sock
-
-    // create a file descriptor set
-    fd_set socket_fds;
-    // max fd required for select() call
-    int max_sock = 0;
     if (rid_sock > sid_sock)
         max_sock = rid_sock;
     else
         max_sock = sid_sock;
-    // set a small timeout for the select() call (e.g. 500 ms)
-    struct timeval timeout;
-    int rc = 0;
-    while(1) {
+
+    while (!(signal_handler.got_exit_signal())) {
 
         // you need to 're-arm' timeout and socket_fds every time (Xselect() 
         // alters these):
@@ -604,14 +665,17 @@ int main(int argc, char **argv)
 
         } else {
 
-            die(-1, "[rid_producer]: Xselect() rc = %d, error = %d (%s)\n", rc, errno, strerror(errno));
+            warn("[rid_producer]: Xselect() rc = %d, error = %d (%s)\n", rc, errno, strerror(errno));
+            goto end;
         }
     }
 
     // ************************************************************************
     // 5) close everything
     // ************************************************************************
-    say("[rid_producer]: this is rid_requester, signing off...");
+end:
+
+    say("[rid_producer]: this is rid_requester, signing off...\n");
 
     Xclose(rid_sock);
     Xclose(sid_sock);
@@ -619,7 +683,7 @@ int main(int argc, char **argv)
     free(name);
     free(rid_string);
 
-    producer.join();
+    if (content_producer_thread) content_producer_thread->join();
 
     exit(rc);
 }

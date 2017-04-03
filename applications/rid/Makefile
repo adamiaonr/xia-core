@@ -42,7 +42,7 @@ all: $(RID_PRO_TARGET) $(RID_REQ_TARGET)
 	mv $(RID_PRO_TARGET) $(BINDIR)
 	mv $(RID_REQ_TARGET) $(BINDIR)
 
-$(RID_PRO_TARGET): $(BUILDDIR)/$(RID_PRO_TARGET).o
+$(RID_PRO_TARGET): $(BUILDDIR)/$(RID_PRO_TARGET).o $(BUILDDIR)/signal_handler.o
 	@echo " Linking..."
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(RID_PRO_TARGET) $^ $(LIB)
 

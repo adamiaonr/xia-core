@@ -151,21 +151,24 @@ String XIARIDRouteTable::list_routes_handler(
 
 	char * header = (char *) calloc(1024, sizeof(char));
 	while (it != table->_rid_fwrdng_tbl.end()) {
+
+		if (it.value()) {
 		
-		click_chatter("XIARIDRouteTable::list_routes_handler() : PATRICIA trie w/ HW = %d\n", it.key());
+			click_chatter("XIARIDRouteTable::list_routes_handler() : PATRICIA trie w/ HW = %d\n", it.key());
 
-		sprintf(header,
-				"--------------------------------------------------------------------------\n"\
-				"%-12s\t| %-12s\t\n"\
-				"--------------------------------------------------------------------------\n"\
-				"%-12d\t| %-12d\t\n",
-				"HW", "NR. ENTRIES",
-				it.key(), it.value()->count());
+			sprintf(header,
+					"--------------------------------------------------------------------------\n"\
+					"%-12s\t| %-12s\t\n"\
+					"--------------------------------------------------------------------------\n"\
+					"%-12d\t| %-12d\t\n",
+					"HW", "NR. ENTRIES",
+					it.key(), it.value()->count());
 
-		tbl += header;
-		tbl += it.value()->print(PRE_ORDER, FWD_ENTRY_STR_MAX_SIZE, XIARIDRouteTable::print_data);
-		// clear header
-		memset(header, '\0', 1024);
+			tbl += header;
+			tbl += it.value()->print(PRE_ORDER, FWD_ENTRY_STR_MAX_SIZE, XIARIDRouteTable::print_data);
+			// clear header
+			memset(header, '\0', 1024);
+		}
 
 		it++;
 	}
