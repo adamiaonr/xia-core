@@ -271,9 +271,8 @@ int send_rid_response(
                 "\n\t[XID_SIZE] = %d"\
                 "\n\t[RID_STR_SIZE] = %d"\
                 "\n\t[PREFIX_MAX_LENGTH] = %d"\
-                "\n\t[RID_PCKT_HDR_LEN] = %d"\
                 "\n\t[sizeof(struct rid_pckt)] = %d\n",
-                XID_SIZE, RID_STR_SIZE, PREFIX_MAX_LENGTH, RID_PCKT_HDR_LEN, sizeof(struct rid_pckt));
+                XID_SIZE, RID_STR_SIZE, PREFIX_MAX_LENGTH, sizeof(struct rid_pckt));
 
         // fill the datalen attribute of rid_pckt
         rid_rsp_pckt->datalen = htons((uint16_t) strlen(content_buffer));

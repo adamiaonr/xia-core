@@ -275,7 +275,7 @@ int main(int argc, char **argv)
     int rc = 0;
     rc = Xsendto(
             x_sock,
-            rid_req_pckt, RID_PCKT_HDR_LEN,
+            rid_req_pckt, sizeof(struct rid_pckt),
             0,
             (struct sockaddr *) &rid_dest_addr,
             rid_dest_addr_len);

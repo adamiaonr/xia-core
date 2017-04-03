@@ -1512,10 +1512,11 @@ void XTRANSPORT::Xbind(unsigned short _sport, uint32_t id, xia::XSocketMsg *xia_
 
 				ERROR("duplicate RID on RIDtoSock map: ",
 						source_xid.unparse().c_str());
-			}
+			} else {
 
-			INFO("added RID to RIDtoSock map: <%s, %d>", 
-				new_entry->get_rid().unparse().c_str(), (new_entry->get_data())->port);
+				INFO("added RID to RIDtoSock map: <%s, %d>", 
+					new_entry->get_rid().unparse().c_str(), (new_entry->get_data())->port);
+			}
 
 		} else {
 
